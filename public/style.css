@@ -75,21 +75,65 @@ body{font-size:15px}
 .topping-title{font-size:16px}
 .topping{font-size:15px;padding:12px}
 
-/* Keep the POS menu at exactly 5 columns on desktop (3 rows x 5 items in the main view). */
+/* ===== V11.1: POS menu = 3 columns x 5 visible rows ===== */
 @media(min-width:901px){
-  .menu-grid{grid-template-columns:repeat(5,minmax(0,1fr));}
-}
-@media(min-width:1700px){
-  .menu-grid{grid-template-columns:repeat(5,minmax(0,1fr));}
+  #page.pos-page .menu-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    grid-template-rows:repeat(5,minmax(0,1fr));
+    grid-auto-rows:minmax(0,1fr);
+    gap:12px;
+    align-content:stretch;
+  }
+  #page.pos-page .menu-card{
+    min-height:0;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+  }
+  #page.pos-page .menu-card img{
+    flex:1 1 auto;
+    min-height:0;
+    height:auto;
+    aspect-ratio:auto;
+    object-fit:cover;
+  }
+  #page.pos-page .menu-card .mc-body{
+    flex:0 0 auto;
+    padding:7px 10px 8px;
+    text-align:center;
+  }
+  #page.pos-page .menu-card b{
+    display:block;
+    font-size:14px;
+    line-height:1.15;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  #page.pos-page .menu-card .price{
+    font-size:14px;
+    margin-top:4px;
+  }
 }
 @media(max-width:1250px) and (min-width:901px){
-  .menu-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
-  .menu-card .mc-body{padding:10px 11px 13px}
-  .menu-card b{font-size:15px}
-  .price{font-size:15px}
+  #page.pos-page .menu-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 }
 
 .payment-success{text-align:center;padding:8px 4px 2px}.payment-success .check{font-size:48px;margin-bottom:6px}.payment-success .modal-total{font-size:22px}.payment-success + .modal-actions{margin-top:18px}
+
+/* Fix V11.1: the Tùy chỉnh button must not inherit the 24px quantity-button size. */
+.qty .btn.small{
+  width:auto;
+  min-width:74px;
+  height:30px;
+  padding:5px 9px;
+  margin-left:2px;
+  white-space:nowrap;
+  line-height:1.1;
+}
+.cart-main .qty{
+  flex-wrap:wrap;
+}
 
 /* POS layout: keep the order/payment panel fixed; only the drink menu scrolls. */
 @media (min-width: 901px) {
@@ -313,3 +357,46 @@ body.modal-open { overflow: hidden; }
   .confirm-actions{flex-direction:column-reverse}
   .confirm-actions button{width:100%}
 }
+
+/* ===== DOANH THU GỘP ĐƠN HÀNG - V11.2 ===== */
+.revenue-page .page-title{margin-bottom:16px}
+.revenue-filter{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow);margin-bottom:18px}
+.revenue-filter label,.staff-orders-filter label{display:flex;flex-direction:column;gap:6px;font-weight:800;color:#53605a}
+.revenue-filter input,.staff-orders-filter input{min-width:210px;padding:11px 12px;border:1px solid var(--line);border-radius:9px;font:inherit;background:#fff}
+.revenue-heading{display:flex;align-items:center;justify-content:space-between;margin:8px 0 14px}
+.revenue-heading h2{margin:0;font-size:22px}
+.revenue-heading span{color:var(--muted);font-weight:700}
+.staff-revenue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.staff-revenue-card{appearance:none;border:1px solid var(--line);background:#fff;border-radius:14px;padding:16px;text-align:left;cursor:pointer;box-shadow:var(--shadow);transition:.15s;min-width:0}
+.staff-revenue-card:hover{transform:translateY(-2px);border-color:#b8cbc1;box-shadow:0 10px 24px rgba(25,55,45,.09)}
+.staff-revenue-top{display:flex;align-items:center;gap:11px}
+.staff-revenue-avatar{width:44px;height:44px;flex:0 0 44px;border-radius:50%;display:grid;place-items:center;background:#eaf2ee;color:var(--green);font-size:22px;font-weight:900}
+.staff-revenue-top>div:nth-child(2){display:flex;flex-direction:column;gap:3px;min-width:0}
+.staff-revenue-top strong{font-size:16px;color:#26322d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.staff-revenue-top span{font-size:12px;color:var(--muted)}
+.staff-revenue-arrow{margin-left:auto!important;font-size:27px!important;color:var(--green)!important}
+.staff-revenue-total{font-size:25px;font-weight:900;color:var(--green);margin:17px 0 13px}
+.staff-payment-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.staff-payment-row span{display:flex;flex-direction:column;gap:4px;padding:9px 10px;background:#f7faf8;border:1px solid #e8eeeb;border-radius:9px}
+.staff-payment-row small{font-size:11px;color:var(--muted);font-weight:700}
+.staff-payment-row b{font-size:13px;color:#25352e}
+.revenue-total-card{margin-top:18px;background:var(--green);color:#fff;border-radius:16px;padding:20px 22px;box-shadow:0 12px 28px rgba(22,64,52,.18);display:flex;align-items:center;justify-content:space-between;gap:20px}
+.revenue-total-card>div:first-child{display:flex;flex-direction:column;gap:7px}
+.revenue-total-card>div:first-child span{font-size:12px;font-weight:800;opacity:.8;letter-spacing:.3px}
+.revenue-total-card>div:first-child strong{font-size:30px}
+.revenue-total-methods{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:9px}
+.revenue-total-methods span{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:9px 11px;font-size:12px}
+.revenue-total-methods b{margin-left:5px;font-size:13px}
+.staff-orders-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+.staff-orders-head h2{margin:15px 0 4px;font-size:23px}
+.staff-orders-head p{margin:0;color:var(--muted)}
+.staff-orders-filter{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow);margin-bottom:16px}
+.staff-orders-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.staff-orders-summary>div{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow)}
+.staff-orders-summary span{display:block;font-size:12px;color:var(--muted);font-weight:700}
+.staff-orders-summary b{display:block;margin-top:6px;font-size:20px;color:var(--green)}
+.staff-orders-table-wrap{max-height:55vh;overflow:auto}
+.revenue-error strong{display:block;color:#a7372d;font-size:18px;margin-bottom:6px}
+.revenue-error p{margin:0 0 14px}
+@media(max-width:1100px){.staff-revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.revenue-total-card{align-items:flex-start;flex-direction:column}.revenue-total-methods{justify-content:flex-start}.staff-orders-summary{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:700px){.staff-revenue-grid{grid-template-columns:1fr}.revenue-filter,.staff-orders-filter{align-items:stretch;flex-direction:column}.revenue-filter input,.staff-orders-filter input{min-width:0;width:100%}.revenue-filter .btn,.staff-orders-filter .btn{width:100%}.staff-orders-summary{grid-template-columns:1fr 1fr}.revenue-total-card>div:first-child strong{font-size:25px}}

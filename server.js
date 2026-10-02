@@ -181,12 +181,25 @@ app.delete('/api/admin/toppings/:id',auth,adminOnly,async(req,res)=>{await q('UP
 
 app.post('/api/admin/qr',auth,adminOnly,upload.single('qr'),async(req,res)=>{if(!req.file)return res.status(400).json({message:'Chưa chọn file'});const data=`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;await q("UPDATE settings SET value=$1 WHERE key='payment_qr'",[data]);res.json({image:data});});
 
+app.get('/api/admin/reports/staff/:id/orders',auth,adminOnly,async(req,res)=>{
+  const {from,to}=req.query;
+  const start=from?`${from} 00:00:00`:`${new Date().toISOString().slice(0,10)} 00:00:00`;
+  const end=to?`${to} 23:59:59`:`${new Date().toISOString().slice(0,10)} 23:59:59`;
+  const staff=await q(`SELECT id,full_name AS "fullName" FROM users WHERE id=$1 AND role='staff'`,[req.params.id]);
+  if(!staff.rowCount) return res.status(404).json({message:'Không tìm thấy nhân viên'});
+  const r=await q(`SELECT id,created_at,payment_method,total FROM orders WHERE user_id=$1 AND created_at BETWEEN $2 AND $3 AND status='paid' ORDER BY created_at DESC,id DESC`,[req.params.id,start,end]);
+  res.json({staff:staff.rows[0],orders:r.rows});
+});
 app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
   const {from,to}=req.query;
   const start=from?`${from} 00:00:00`:`${new Date().toISOString().slice(0,10)} 00:00:00`;
   const end=to?`${to} 23:59:59`:`${new Date().toISOString().slice(0,10)} 23:59:59`;
   const total=await q(`SELECT COALESCE(SUM(total),0)::int total,COUNT(*)::int orders,COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END),0)::int cash,COALESCE(SUM(CASE WHEN payment_method='transfer' THEN total ELSE 0 END),0)::int transfer FROM orders WHERE created_at BETWEEN $1 AND $2 AND status='paid'`,[start,end]);
-  const byStaff=await q(`SELECT u.id,u.full_name AS "fullName",COUNT(o.id)::int orders,COALESCE(SUM(o.total),0)::int revenue FROM users u LEFT JOIN orders o ON o.user_id=u.id AND o.created_at BETWEEN $1 AND $2 AND o.status='paid' GROUP BY u.id ORDER BY revenue DESC`,[start,end]);
+  const byStaff=await q(`SELECT u.id,u.full_name AS "fullName",COUNT(o.id)::int orders,COALESCE(SUM(o.total),0)::int revenue,
+    COALESCE(SUM(CASE WHEN o.payment_method='cash' THEN o.total ELSE 0 END),0)::int cash,
+    COALESCE(SUM(CASE WHEN o.payment_method='transfer' THEN o.total ELSE 0 END),0)::int transfer
+    FROM users u LEFT JOIN orders o ON o.user_id=u.id AND o.created_at BETWEEN $1 AND $2 AND o.status='paid'
+    WHERE u.role='staff' GROUP BY u.id,u.full_name ORDER BY revenue DESC`,[start,end]);
   const byDay=await q(`SELECT TO_CHAR(created_at,'YYYY-MM-DD') day,COUNT(*)::int orders,COALESCE(SUM(total),0)::int revenue FROM orders WHERE created_at BETWEEN $1 AND $2 AND status='paid' GROUP BY 1 ORDER BY 1`,[start,end]);
   res.json({summary:total.rows[0],byStaff:byStaff.rows,byDay:byDay.rows});
 });

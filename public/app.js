@@ -75,7 +75,7 @@ function fmtDate(x) {
 function nav() {
   const admin = state.user.role === 'admin';
   const items = admin
-    ? [['pos','☕','Gọi món'],['orders','▣','Đơn hàng'],['reports','▥','Doanh thu'],['users','♙','Quản lý nhân viên'],['settings','⚙','Cài đặt']]
+    ? [['pos','☕','Gọi món'],['reports','▥','Doanh thu'],['users','♙','Quản lý nhân viên'],['settings','⚙','Cài đặt']]
     : [['pos','☕','Gọi món']];
   $('#nav').innerHTML = items.map(([p, icon, label]) =>
     `<button class="nav-item ${state.page === p ? 'active' : ''}" onclick="go('${p}')"><span class="nav-icon">${icon}</span><span>${label}</span></button>`
@@ -113,7 +113,6 @@ async function loadBase() {
 function renderPage() {
   $('#page').className = state.page === 'pos' ? 'pos-page' : '';
   if (state.page === 'pos') renderPOS();
-  if (state.page === 'orders') renderOrders();
   if (state.page === 'reports') renderReports();
   if (state.page === 'users') renderUsers();
   if (state.page === 'settings') renderSettings();
@@ -483,53 +482,128 @@ async function deleteTop(id) {
 }
 async function uploadQR(e) { e.preventDefault(); const f = $('#qrFile').files[0]; if (!f) return toast('Chọn file QR', true); const fd = new FormData(); fd.append('qr', f); try { await api('/api/admin/qr', {method:'POST',body:fd}); await loadBase(); toast('Đã upload QR'); renderSettings(); } catch(e) { toast(e.message,true); } }
 
-async function renderReports() {
-  const today = new Date().toISOString().slice(0,10);
-  const month = today.slice(0,7);
-  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Doanh thu</h1><p>Chọn cách xem doanh thu.</p></div></div><div class="report-tabs"><button class="report-tab active" id="reportDayTab" onclick="showReportMode('day')">Theo ngày</button><button class="report-tab" id="reportMonthTab" onclick="showReportMode('month')">Theo tháng</button></div><div id="reportControls"></div><div id="reportArea"><div class="empty">Chọn ngày hoặc tháng để xem doanh thu</div></div></div>`;
-  showReportMode('day');
+function localDateISO(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
-function showReportMode(mode) {
-  $('#reportDayTab')?.classList.toggle('active', mode === 'day');
-  $('#reportMonthTab')?.classList.toggle('active', mode === 'month');
-  const today = new Date().toISOString().slice(0,10);
-  const month = today.slice(0,7);
-  if (mode === 'day') {
-    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn ngày<input id="reportDate" type="date" value="${today}"></label><button class="btn primary" onclick="loadReportDay()">Xem doanh thu</button></div>`;
-    $('#reportArea').innerHTML = '<div class="empty">Chọn ngày rồi bấm “Xem doanh thu”</div>';
-  } else {
-    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn tháng<input id="reportMonth" type="month" value="${month}"></label><button class="btn primary" onclick="loadReportMonth()">Xem doanh thu</button></div>`;
-    $('#reportArea').innerHTML = '<div class="empty">Chọn tháng rồi bấm “Xem doanh thu”</div>';
+async function renderReports() {
+  const today = localDateISO();
+  $('#page').innerHTML = `
+    <div class="content revenue-page">
+      <div class="page-title">
+        <div>
+          <h1>Doanh thu</h1>
+          <p>Chọn ngày để xem doanh thu của từng nhân viên và toàn bộ cửa hàng.</p>
+        </div>
+      </div>
+      <div class="revenue-filter">
+        <label>Ngày xem doanh thu
+          <input id="revenueDate" type="date" value="${today}">
+        </label>
+        <button class="btn primary" onclick="loadRevenueDashboard()">Xem doanh thu</button>
+      </div>
+      <div id="revenueArea"><div class="empty">Đang tải doanh thu...</div></div>
+    </div>`;
+  await loadRevenueDashboard();
+}
+
+async function loadRevenueDashboard() {
+  const date = $('#revenueDate')?.value || localDateISO();
+  if (!date) return toast('Hãy chọn ngày', true);
+  const area = $('#revenueArea');
+  if (!area) return;
+  area.innerHTML = '<div class="empty">Đang tải doanh thu...</div>';
+  try {
+    const d = await api(`/api/admin/reports/summary?from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}`);
+    const s = d.summary || {};
+    const staff = d.byStaff || [];
+    area.innerHTML = `
+      <div class="revenue-heading">
+        <div><h2>Doanh thu ngày ${date.split('-').reverse().join('/')}</h2><span>${Number(s.orders || 0)} đơn hàng</span></div>
+      </div>
+      <div class="staff-revenue-grid">
+        ${staff.length ? staff.map(x => `
+          <button class="staff-revenue-card" onclick="showStaffRevenueOrders(${x.id}, '${esc(x.fullName).replace(/'/g, "\\'")}', '${date}')">
+            <div class="staff-revenue-top">
+              <div class="staff-revenue-avatar">♙</div>
+              <div><strong>${esc(x.fullName)}</strong><span>${x.orders} đơn</span></div>
+              <span class="staff-revenue-arrow">›</span>
+            </div>
+            <div class="staff-revenue-total">${money(x.revenue)}</div>
+            <div class="staff-payment-row">
+              <span><small>Tiền mặt</small><b>${money(x.cash)}</b></span>
+              <span><small>Chuyển khoản</small><b>${money(x.transfer)}</b></span>
+            </div>
+          </button>`).join('') : '<div class="empty">Chưa có nhân viên phát sinh đơn trong ngày này.</div>'}
+      </div>
+      <section class="revenue-total-card">
+        <div><span>TỔNG DOANH THU TẤT CẢ NHÂN VIÊN</span><strong>${money(s.total)}</strong></div>
+        <div class="revenue-total-methods">
+          <span>💵 Tiền mặt <b>${money(s.cash)}</b></span>
+          <span>▣ Chuyển khoản <b>${money(s.transfer)}</b></span>
+          <span>🧾 ${s.orders || 0} đơn</span>
+        </div>
+      </section>`;
+  } catch (e) {
+    area.innerHTML = `<div class="empty revenue-error"><strong>Không thể tải doanh thu</strong><p>${esc(e.message || 'Có lỗi xảy ra')}</p><button class="btn primary" onclick="loadRevenueDashboard()">Thử lại</button></div>`;
   }
 }
 
-async function loadReportDay() {
-  const date = $('#reportDate').value;
-  if (!date) return toast('Hãy chọn ngày', true);
-  await loadReportRange(date, date, `Doanh thu ngày ${date.split('-').reverse().join('/')}`);
+async function showStaffRevenueOrders(staffId, staffName, date = localDateISO()) {
+  const area = $('#revenueArea');
+  if (!area) return;
+  area.innerHTML = `
+    <div class="staff-orders-head">
+      <div>
+        <button class="btn small" onclick="loadRevenueDashboard()">← Quay lại doanh thu</button>
+        <h2>Đơn hàng của ${esc(staffName)}</h2>
+        <p>Có thể đổi ngày để tìm lại các đơn đã bán.</p>
+      </div>
+    </div>
+    <div class="staff-orders-filter">
+      <label>Ngày<input id="staffOrdersDate" type="date" value="${date}"></label>
+      <button class="btn primary" onclick="loadStaffRevenueOrders(${staffId}, '${esc(staffName).replace(/'/g, "\\'")}')">Tìm đơn hàng</button>
+    </div>
+    <div id="staffOrdersResult"><div class="empty">Đang tải...</div></div>`;
+  await loadStaffRevenueOrders(staffId, staffName);
 }
 
-async function loadReportMonth() {
-  const month = $('#reportMonth').value;
-  if (!month) return toast('Hãy chọn tháng', true);
-  const [year, m] = month.split('-').map(Number);
-  const last = new Date(year, m, 0).getDate();
-  const from = `${year}-${String(m).padStart(2,'0')}-01`;
-  const to = `${year}-${String(m).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
-  await loadReportRange(from, to, `Doanh thu tháng ${String(m).padStart(2,'0')}/${year}`);
-}
-
-async function loadReportRange(from, to, title) {
+async function loadStaffRevenueOrders(staffId, staffName) {
+  const date = $('#staffOrdersDate')?.value || localDateISO();
+  const result = $('#staffOrdersResult');
+  if (!result) return;
+  result.innerHTML = '<div class="empty">Đang tải đơn hàng...</div>';
   try {
-    const d = await api(`/api/admin/reports/summary?from=${from}&to=${to}`);
-    const s = d.summary;
-    $('#reportArea').innerHTML = `<div class="report-result-title"><h2>${title}</h2><span>${s.orders} đơn hàng</span></div><div class="stats"><div class="stat"><span>Doanh thu</span><strong>${money(s.total)}</strong></div><div class="stat"><span>Số đơn</span><strong>${s.orders}</strong></div><div class="stat"><span>Tiền mặt</span><strong>${money(s.cash)}</strong></div><div class="stat"><span>Chuyển khoản</span><strong>${money(s.transfer)}</strong></div></div><div class="report-grid"><section class="section-card"><h3>Theo nhân viên</h3><table class="data-table"><thead><tr><th>Nhân viên</th><th>Đơn</th><th>Doanh thu</th></tr></thead><tbody>${d.byStaff.map(x => `<tr><td>${esc(x.fullName)}</td><td>${x.orders}</td><td><b>${money(x.revenue)}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">Chưa có dữ liệu</td></tr>'}</tbody></table></section><section class="section-card"><h3>Theo ngày</h3><table class="data-table"><thead><tr><th>Ngày</th><th>Đơn</th><th>Doanh thu</th></tr></thead><tbody>${d.byDay.map(x => `<tr><td>${x.day}</td><td>${x.orders}</td><td><b>${money(x.revenue)}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">Chưa có dữ liệu</td></tr>'}</tbody></table></section></div>`;
-  } catch (e) { toast(e.message, true); }
+    const d = await api(`/api/admin/reports/staff/${staffId}/orders?from=${encodeURIComponent(date)}&to=${encodeURIComponent(date)}`);
+    const orders = d.orders || [];
+    const total = orders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+    const cash = orders.filter(o => o.payment_method === 'cash').reduce((sum, o) => sum + Number(o.total || 0), 0);
+    const transfer = orders.filter(o => o.payment_method === 'transfer').reduce((sum, o) => sum + Number(o.total || 0), 0);
+    result.innerHTML = `
+      <div class="staff-orders-summary">
+        <div><span>Số đơn</span><b>${orders.length}</b></div>
+        <div><span>Doanh thu</span><b>${money(total)}</b></div>
+        <div><span>Tiền mặt</span><b>${money(cash)}</b></div>
+        <div><span>Chuyển khoản</span><b>${money(transfer)}</b></div>
+      </div>
+      <div class="panel staff-orders-table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Mã đơn</th><th>Thời gian</th><th>Thanh toán</th><th>Tổng tiền</th><th></th></tr></thead>
+          <tbody>
+            ${orders.map(o => `<tr><td><b>#${o.id}</b></td><td>${fmtDate(o.created_at)}</td><td>${o.payment_method === 'cash' ? '💵 Tiền mặt' : '▣ Chuyển khoản'}</td><td><b>${money(o.total)}</b></td><td><button class="btn small" onclick="printOrder(${o.id})">Xem đơn</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Nhân viên này không có đơn trong ngày đã chọn.</td></tr>'}
+          </tbody>
+        </table>
+      </div>`;
+  } catch (e) {
+    result.innerHTML = `<div class="empty revenue-error"><strong>Không thể tải đơn hàng</strong><p>${esc(e.message || 'Có lỗi xảy ra')}</p><button class="btn primary" onclick="loadStaffRevenueOrders(${staffId}, '${esc(staffName).replace(/'/g, "\\'")}')">Thử lại</button></div>`;
+  }
 }
-window.showReportMode = showReportMode;
-window.loadReportDay = loadReportDay;
-window.loadReportMonth = loadReportMonth;
+window.loadRevenueDashboard = loadRevenueDashboard;
+window.showStaffRevenueOrders = showStaffRevenueOrders;
+window.loadStaffRevenueOrders = loadStaffRevenueOrders;
 
 function openModal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.remove('hidden'); }
 function closeModal() { $('#modal').classList.add('hidden'); window.__productDraft = null; window.__editIndex = null; }
