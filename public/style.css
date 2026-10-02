@@ -160,3 +160,284 @@ body{font-size:15px}
   .login-copy p{font-size:26px}.login-copy h1{font-size:32px}
   .login-card{min-height:560px;padding:48px 8%}
 }
+
+
+/* Menu card alignment: product name and price centered inside each card. */
+.menu-card .mc-body{text-align:center}
+.menu-card .mc-body b{display:block;text-align:center}
+.menu-card .price{text-align:center}
+
+/* Category management in Admin settings. */
+.settings-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}
+.settings-section-head h3{margin:0}
+.category-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#f7faf8;border:1px solid var(--line);border-radius:10px;margin-bottom:10px}
+.category-chips{display:flex;flex-wrap:wrap;gap:8px}
+.category-chip{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 7px 6px 12px;font-weight:700}
+.category-chip button{border:0;background:#eef4f0;color:var(--green);border-radius:999px;padding:5px 9px;font-weight:800;cursor:pointer}
+.category-chip .danger-text{background:#fff1ef;color:#c73b31}
+.inline-select{display:flex;gap:7px;align-items:center}
+.inline-select select{flex:1;min-width:0}
+.inline-select .btn{white-space:nowrap;padding:9px 11px}
+
+
+/* =========================================================
+   V11 - POS 3 x 5 + FIXED SIDEBARS + MENU-ONLY SCROLL
+   ========================================================= */
+@media (min-width: 901px) {
+  #page.pos-page {
+    height: calc(100vh - 78px);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #page.pos-page .pos-content {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #page.pos-page .pos-layout {
+    height: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    grid-template-columns: minmax(0, 1fr) 390px;
+  }
+
+  /* Thanh bên trái không chạy theo nội dung */
+  #appView > .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 40;
+  }
+
+  #appView > .main {
+    margin-left: 245px;
+    width: calc(100vw - 245px);
+  }
+
+  /* Thanh đơn hàng bên phải cố định */
+  #page.pos-page .cart {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  #page.pos-page .cart-items {
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* Chỉ khu vực menu được cuộn */
+  #page.pos-page .menu-panel {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #page.pos-page .menu-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-auto-rows: auto;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    align-content: start;
+    padding: 3px 8px 18px 3px;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+  }
+
+  /* Món mới luôn xuống hàng tiếp theo, không làm co các card cũ */
+  #page.pos-page .menu-card {
+    min-width: 0;
+  }
+
+  #page.pos-page .menu-card .mc-body {
+    text-align: center;
+  }
+
+  #page.pos-page .menu-card b,
+  #page.pos-page .menu-card .price {
+    text-align: center;
+  }
+
+  /* Scrollbar khu vực menu */
+  #page.pos-page .menu-grid::-webkit-scrollbar,
+  #page.pos-page .cart-items::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  #page.pos-page .menu-grid::-webkit-scrollbar-track,
+  #page.pos-page .cart-items::-webkit-scrollbar-track {
+    background: #f0f4f1;
+    border-radius: 10px;
+  }
+
+  #page.pos-page .menu-grid::-webkit-scrollbar-thumb,
+  #page.pos-page .cart-items::-webkit-scrollbar-thumb {
+    background: #b7c9c0;
+    border-radius: 10px;
+  }
+}
+
+/* V11 - đẹp hơn cho modal xác nhận xóa */
+.delete-confirm {
+  text-align: center;
+  padding: 8px 8px 2px;
+}
+
+.delete-confirm-icon {
+  width: 70px;
+  height: 70px;
+  margin: 2px auto 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #fff2f0, #ffe5e1);
+  box-shadow:
+    0 8px 24px rgba(201, 65, 53, .12),
+    inset 0 0 0 1px rgba(201, 65, 53, .08);
+  font-size: 31px;
+}
+
+.delete-confirm-eyebrow {
+  color: #b4473d;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1.8px;
+  margin-bottom: 7px;
+}
+
+.delete-confirm h3 {
+  color: #17372e;
+  font-size: 25px !important;
+  margin: 0 0 9px;
+  letter-spacing: -.3px;
+}
+
+.delete-confirm p {
+  color: #66716c;
+  font-size: 15px;
+  line-height: 1.65;
+  margin: 0 auto;
+  max-width: 420px;
+}
+
+.delete-confirm p strong {
+  color: #17372e;
+  font-weight: 850;
+}
+
+.delete-confirm-actions {
+  justify-content: center;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 11px;
+  margin-top: 26px;
+}
+
+.delete-confirm-actions .btn {
+  height: 48px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.delete-cancel {
+  color: #315047;
+  background: #eef4f1;
+  border-color: #d7e3dd !important;
+}
+
+.delete-cancel:hover {
+  background: #e4ede9;
+}
+
+.delete-confirm-btn {
+  color: #fff !important;
+  background: #c94135 !important;
+  border-color: #c94135 !important;
+  box-shadow: 0 7px 18px rgba(201, 65, 53, .20);
+}
+
+.delete-confirm-btn:hover {
+  background: #b9382e !important;
+  transform: translateY(-1px);
+  box-shadow: 0 9px 22px rgba(201, 65, 53, .28);
+}
+
+@media (min-width: 1700px) {
+  #appView > .main {
+    margin-left: 270px;
+    width: calc(100vw - 270px);
+  }
+
+  #page.pos-page .pos-layout {
+    grid-template-columns: minmax(0, 1fr) 430px;
+  }
+
+  #page.pos-page .menu-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 1250px) and (min-width: 901px) {
+  #appView > .main {
+    margin-left: 220px;
+    width: calc(100vw - 220px);
+  }
+
+  #page.pos-page .pos-layout {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+
+  #page.pos-page .menu-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 900px) {
+  #page.pos-page .menu-grid {
+    grid-template-columns: repeat(3, minmax(110px, 1fr));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .delete-confirm-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Revenue / reports */
+.report-tabs{display:flex;gap:10px;margin:26px 0 18px}
+.report-tab{border:1px solid #dbe4df;background:#fff;color:#315047;border-radius:13px;padding:13px 24px;font:inherit;font-weight:800;cursor:pointer;transition:.18s}
+.report-tab:hover{background:#f2f7f4}
+.report-tab.active{background:#153f34;color:#fff;border-color:#153f34;box-shadow:0 7px 18px rgba(21,63,52,.14)}
+.report-filter{display:flex;align-items:end;gap:14px;padding:24px;margin-bottom:28px}
+.report-date-label{display:flex;flex-direction:column;gap:8px;font-weight:800;color:#4d5e58;min-width:257px}
+.report-date-label input{height:58px;border:1px solid #dce5e1;border-radius:14px;padding:0 16px;font:inherit;font-weight:700;color:#182d27;background:#fff;outline:none}
+.report-date-label input:focus{border-color:#2e6556;box-shadow:0 0 0 4px rgba(46,101,86,.08)}
+.report-view-btn{height:58px;padding:0 24px}
+.report-result{min-height:220px}
+.report-hint,.report-loading{text-align:center;color:#70807a;padding:72px 20px;font-size:16px}
+.report-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+.report-stat{background:#fff;border:1px solid #e0e7e4;border-radius:16px;padding:20px;box-shadow:0 8px 24px rgba(20,45,37,.05)}
+.report-stat span{display:block;color:#71807b;font-size:14px;font-weight:700;margin-bottom:9px}
+.report-stat strong{display:block;color:#153f34;font-size:25px}
+.report-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.report-panel{padding:20px;overflow:hidden}
+.report-panel-head h3{margin:0 0 16px;color:#173d32;font-size:18px}
+.report-period-box{min-height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;text-align:center}
+.report-period-box span{color:#7b8883;font-size:14px;font-weight:700}
+.report-period-box strong{font-size:30px;color:#173d32}
+.report-period-box small{color:#77857f}
+.report-error{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:220px;text-align:center;color:#6d7974}
+.report-error strong{font-size:19px;color:#a93831}
+.report-error span{font-size:14px}
+.report-error .btn{margin-top:7px}
+@media(max-width:900px){.report-summary-grid{grid-template-columns:repeat(2,1fr)}.report-columns{grid-template-columns:1fr}.report-filter{align-items:stretch;flex-direction:column}.report-date-label{min-width:0}.report-view-btn{width:100%}}

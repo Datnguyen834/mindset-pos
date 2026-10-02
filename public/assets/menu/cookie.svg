@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d9a06c"/><stop offset="1" stop-color="#fffaf3"/></linearGradient></defs>
+<rect width="800" height="600" rx="36" fill="url(#bg)"/>
+<circle cx="400" cy="315" r="185" fill="#8b5a36" opacity=".12"/>
+<ellipse cx="400" cy="440" rx="220" ry="32" fill="#000" opacity=".10"/>
+<path d="M250 370 Q400 180 550 370 L530 425 Q400 465 270 425Z" fill="#8b5a36" opacity=".92"/>
+<path d="M280 350 Q400 220 520 350 Q400 385 280 350Z" fill="#d9a06c" opacity=".98"/>
+<path d="M300 315 Q400 255 500 315 Q400 340 300 315Z" fill="#fff" opacity=".95"/>
+<text x="400" y="110" text-anchor="middle" font-family="Georgia,serif" font-size="44" fill="#8b5a36" font-weight="700">Cookie</text>
+<text x="400" y="535" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="#5d5d55">MINDSET BAKERY</text>
+</svg>

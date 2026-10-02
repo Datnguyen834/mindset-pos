@@ -45,6 +45,28 @@ async function initDb() {
       await q('INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,$4)',[name,cat,price,data]);
     }
   }
+
+  // Seed/upgrade bakery without duplicating existing products on an existing database.
+  await q(`INSERT INTO categories(name) VALUES('Bánh ngọt') ON CONFLICT(name) DO NOTHING`);
+  const bakeryItems = [
+    ['Tiramisu','Bánh ngọt',45000,'tiramisu.svg'],
+    ['Cheesecake','Bánh ngọt',45000,'cheesecake.svg'],
+    ['Croissant','Bánh ngọt',30000,'croissant.svg'],
+    ['Su kem','Bánh ngọt',28000,'su-kem.svg'],
+    ['Red Velvet','Bánh ngọt',42000,'red-velvet.svg'],
+    ['Cookie chocolate','Bánh ngọt',22000,'cookie.svg']
+  ];
+  for (const [name,cat,price,file] of bakeryItems) {
+    const exists = await q('SELECT id FROM menu_items WHERE name=$1 LIMIT 1',[name]);
+    if (!exists.rowCount) {
+      const p = path.join(__dirname,'public/assets/menu',file);
+      const ext = path.extname(file).toLowerCase();
+      const mime = ext === '.svg' ? 'image/svg+xml' : 'image/jpeg';
+      const data = fs.existsSync(p) ? `data:${mime};base64,${fs.readFileSync(p).toString('base64')}` : null;
+      await q('INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,$4)',[name,cat,price,data]);
+    }
+  }
+  await q(`INSERT INTO categories(name) SELECT DISTINCT category FROM menu_items WHERE category IS NOT NULL AND TRIM(category) <> '' ON CONFLICT(name) DO NOTHING`);
   const topCount = await q('SELECT COUNT(*)::int AS n FROM toppings');
   if (topCount.rows[0].n === 0) {
     await q(`INSERT INTO toppings(name,price) VALUES ('Trân châu',5000),('Thạch',5000),('Kem cheese',8000),('Shot espresso',10000),('Sữa tươi',5000)`);
@@ -78,6 +100,7 @@ app.post('/api/auth/logout',(req,res)=>{res.clearCookie('mindset_token');res.jso
 app.get('/api/auth/me',auth,(req,res)=>res.json({user:{id:req.user.id,username:req.user.username,fullName:req.user.fullName,role:req.user.role}}));
 
 app.get('/api/menu',auth,async(req,res)=>{ const r=await q('SELECT id,name,category,price,image_data AS image,active FROM menu_items WHERE active=true ORDER BY id'); res.json(r.rows); });
+app.get('/api/categories',auth,async(req,res)=>{ const r=await q('SELECT id,name FROM categories WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/toppings',auth,async(req,res)=>{ const r=await q('SELECT id,name,price FROM toppings WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/settings/qr',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='payment_qr'"); res.json({image:r.rows[0]?.value||''}); });
 
@@ -146,9 +169,12 @@ app.post('/api/admin/users',auth,adminOnly,async(req,res)=>{const {username,pass
 app.put('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{const {fullName,password,role,active}=req.body;const sets=[];const vals=[];if(fullName!==undefined){vals.push(fullName);sets.push(`full_name=$${vals.length}`)}if(role!==undefined){if(!['admin','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});vals.push(role);sets.push(`role=$${vals.length}`)}if(active!==undefined){vals.push(!!active);sets.push(`active=$${vals.length}`)}if(password){vals.push(await bcrypt.hash(password,10));sets.push(`password_hash=$${vals.length}`)}if(!sets.length)return res.json({ok:true});vals.push(req.params.id);const r=await q(`UPDATE users SET ${sets.join(',')} WHERE id=$${vals.length} RETURNING id,username,full_name AS "fullName",role,active`,vals);res.json(r.rows[0]);});
 app.delete('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{if(Number(req.params.id)===req.user.id)return res.status(400).json({message:'Không thể xóa tài khoản đang đăng nhập'});await q('UPDATE users SET active=false WHERE id=$1',[req.params.id]);res.json({ok:true});});
 
-app.post('/api/admin/menu',auth,adminOnly,upload.single('image'),async(req,res)=>{const {name,category='Khác',price}=req.body;if(!name||price===undefined)return res.status(400).json({message:'Thiếu tên/giá'});const img=req.file?`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`:null;const r=await q('INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,$4) RETURNING id,name,category,price,image_data AS image,active',[name,category,money(price),img]);res.json(r.rows[0]);});
-app.put('/api/admin/menu/:id',auth,adminOnly,upload.single('image'),async(req,res)=>{const {name,category,price,active}=req.body;const sets=[];const vals=[];for(const [k,v] of [['name',name],['category',category],['price',price!==undefined?money(price):undefined],['active',active!==undefined?active!=='false':undefined]]){if(v!==undefined){vals.push(v);sets.push(`${k}=$${vals.length}`)}}if(req.file){vals.push(`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`);sets.push(`image_data=$${vals.length}`)}vals.push(req.params.id);const r=await q(`UPDATE menu_items SET ${sets.join(',')},updated_at=NOW() WHERE id=$${vals.length} RETURNING id,name,category,price,image_data AS image,active`,vals);res.json(r.rows[0]);});
+app.post('/api/admin/menu',auth,adminOnly,upload.single('image'),async(req,res)=>{const {name,category='Khác',price}=req.body;if(!name||price===undefined)return res.status(400).json({message:'Thiếu tên/giá'});const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});const img=req.file?`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`:null;const r=await q('INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,$4) RETURNING id,name,category,price,image_data AS image,active',[name,category,money(price),img]);res.json(r.rows[0]);});
+app.put('/api/admin/menu/:id',auth,adminOnly,upload.single('image'),async(req,res)=>{const {name,category,price,active}=req.body;const sets=[];const vals=[];if(category!==undefined){const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});}for(const [k,v] of [['name',name],['category',category],['price',price!==undefined?money(price):undefined],['active',active!==undefined?active!=='false':undefined]]){if(v!==undefined){vals.push(v);sets.push(`${k}=$${vals.length}`)}}if(req.file){vals.push(`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`);sets.push(`image_data=$${vals.length}`)}vals.push(req.params.id);const r=await q(`UPDATE menu_items SET ${sets.join(',')},updated_at=NOW() WHERE id=$${vals.length} RETURNING id,name,category,price,image_data AS image,active`,vals);res.json(r.rows[0]);});
 app.delete('/api/admin/menu/:id',auth,adminOnly,async(req,res)=>{await q('UPDATE menu_items SET active=false WHERE id=$1',[req.params.id]);res.json({ok:true});});
+app.post('/api/admin/categories',auth,adminOnly,async(req,res)=>{const name=String(req.body.name||'').trim();if(!name)return res.status(400).json({message:'Nhập tên danh mục'});if(name.length>40)return res.status(400).json({message:'Tên danh mục tối đa 40 ký tự'});try{const r=await q('INSERT INTO categories(name) VALUES($1) RETURNING id,name',[name]);res.json(r.rows[0]);}catch(e){res.status(400).json({message:'Danh mục đã tồn tại'});}});
+app.put('/api/admin/categories/:id',auth,adminOnly,async(req,res)=>{const name=String(req.body.name||'').trim();if(!name)return res.status(400).json({message:'Nhập tên danh mục'});try{const old=await q('SELECT name FROM categories WHERE id=$1 AND active=true',[req.params.id]);if(!old.rowCount)return res.status(404).json({message:'Không tìm thấy danh mục'});const r=await q('UPDATE categories SET name=$1,updated_at=NOW() WHERE id=$2 RETURNING id,name',[name,req.params.id]);await q('UPDATE menu_items SET category=$1,updated_at=NOW() WHERE category=$2',[name,old.rows[0].name]);res.json(r.rows[0]);}catch(e){res.status(400).json({message:'Tên danh mục đã tồn tại'});}});
+app.delete('/api/admin/categories/:id',auth,adminOnly,async(req,res)=>{const c=await q('SELECT name FROM categories WHERE id=$1 AND active=true',[req.params.id]);if(!c.rowCount)return res.status(404).json({message:'Không tìm thấy danh mục'});const used=await q('SELECT COUNT(*)::int n FROM menu_items WHERE category=$1',[c.rows[0].name]);if(used.rows[0].n>0)return res.status(400).json({message:`Danh mục đang được dùng bởi ${used.rows[0].n} món. Hãy chuyển món sang danh mục khác trước.`});await q('UPDATE categories SET active=false,updated_at=NOW() WHERE id=$1',[req.params.id]);res.json({ok:true});});
 
 app.post('/api/admin/toppings',auth,adminOnly,async(req,res)=>{const {name,price=0}=req.body;const r=await q('INSERT INTO toppings(name,price) VALUES($1,$2) RETURNING *',[name,money(price)]);res.json(r.rows[0]);});
 app.put('/api/admin/toppings/:id',auth,adminOnly,async(req,res)=>{const {name,price,active}=req.body;const r=await q('UPDATE toppings SET name=COALESCE($1,name),price=COALESCE($2,price),active=COALESCE($3,active) WHERE id=$4 RETURNING *',[name,price!==undefined?money(price):null,active!==undefined?active:null,req.params.id]);res.json(r.rows[0]);});
