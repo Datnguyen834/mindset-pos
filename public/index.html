@@ -39,6 +39,19 @@
   </section>
 
   <div id="modal" class="modal hidden"><div class="modal-box" id="modalBox"></div></div>
+
+  <div id="confirmModal" class="confirm-modal hidden" aria-hidden="true">
+    <div class="confirm-backdrop" onclick="closeConfirmDelete()"></div>
+    <div class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="confirmDeleteTitle">
+      <div class="confirm-icon">🗑️</div>
+      <h3 id="confirmDeleteTitle">Xóa sản phẩm?</h3>
+      <p id="confirmDeleteMessage">Bạn có chắc muốn xóa mục này không?</p>
+      <div class="confirm-actions">
+        <button type="button" class="confirm-cancel" onclick="closeConfirmDelete()">Hủy</button>
+        <button type="button" class="confirm-danger" id="confirmDeleteButton" onclick="runConfirmDelete()">Xóa</button>
+      </div>
+    </div>
+  </div>
   <script src="/app.js"></script>
 </body>
 </html>

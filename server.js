@@ -45,8 +45,7 @@ async function initDb() {
       await q('INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,$4)',[name,cat,price,data]);
     }
   }
-
-  // Seed/upgrade bakery without duplicating existing products on an existing database.
+  // Add bakery category/products without duplicating existing data.
   await q(`INSERT INTO categories(name) VALUES('Bánh ngọt') ON CONFLICT(name) DO NOTHING`);
   const bakeryItems = [
     ['Tiramisu','Bánh ngọt',45000,'tiramisu.svg'],

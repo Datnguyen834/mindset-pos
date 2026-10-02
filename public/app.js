@@ -24,6 +24,42 @@ function toast(msg, err = false) {
   setTimeout(() => el.remove(), 2600);
 }
 
+let pendingDeleteAction = null;
+
+function confirmDelete({ title = 'Xác nhận xóa?', message = 'Bạn có chắc muốn xóa', item = 'mục này?', onConfirm }) {
+  pendingDeleteAction = onConfirm;
+  $('#confirmDeleteTitle').textContent = title;
+  $('#confirmDeleteMessage').innerHTML = `${esc(message)} <strong>${esc(item)}</strong>`;
+  $('#confirmDeleteButton').disabled = false;
+  $('#confirmDeleteButton').textContent = title.toLowerCase().includes('khóa') ? 'Khóa' : 'Xóa';
+  $('#confirmModal').classList.remove('hidden');
+  $('#confirmModal').setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+}
+
+function closeConfirmDelete() {
+  pendingDeleteAction = null;
+  const modal = $('#confirmModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  document.body.classList.remove('modal-open');
+}
+
+async function runConfirmDelete() {
+  if (!pendingDeleteAction) return;
+  const action = pendingDeleteAction;
+  $('#confirmDeleteButton').disabled = true;
+  try {
+    await action();
+    closeConfirmDelete();
+  } catch (e) {
+    $('#confirmDeleteButton').disabled = false;
+    toast(e.message || 'Có lỗi xảy ra', true);
+  }
+}
+
 async function api(url, opt = {}) {
   const r = await fetch(url, { credentials: 'same-origin', ...opt });
   let d = {};
@@ -327,96 +363,6 @@ async function printOrder(id) {
   openModal(`<div class="invoice"><h1>Mindset</h1><p style="text-align:center">HÓA ĐƠN #${o.id}</p><p>${fmtDate(o.created_at)}<br>Nhân viên: ${esc(o.staff)}</p><table>${o.items.map(x => `<tr><td><strong>${esc(x.item_name)} x${x.quantity}</strong><br><small>Đường ${x.sugar_percent}% · Đá ${x.ice_percent}%<br>${x.toppings.map(t => esc(t.name)).join(', ') || 'Không topping'}</small></td><td class="r">${money(x.line_total)}</td></tr>`).join('')}</table><hr><p class="r"><b>TỔNG: ${money(o.total)}</b></p><p style="text-align:center">Cảm ơn quý khách!</p></div><div class="modal-actions no-print"><button class="btn" onclick="window.print()">In</button><button class="btn" onclick="closeModal()">Đóng</button></div>`);
 }
 
-async function renderReports(mode = 'day', selected = '') {
-  const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  const today = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-  const monthNow = `${now.getFullYear()}-${pad(now.getMonth()+1)}`;
-
-  if (!selected) selected = mode === 'month' ? monthNow : today;
-
-  const isMonth = mode === 'month';
-  const title = 'Doanh thu';
-  const subtitle = 'Chọn cách xem doanh thu.';
-  const inputLabel = isMonth ? 'Chọn tháng' : 'Chọn ngày';
-  const inputType = isMonth ? 'month' : 'date';
-
-  $('#page').innerHTML = `<div class="content reports-page">
-    <div class="page-title">
-      <div>
-        <h1>${title}</h1>
-        <p>${subtitle}</p>
-      </div>
-    </div>
-
-    <div class="report-tabs">
-      <button class="report-tab ${!isMonth ? 'active' : ''}" onclick="renderReports('day')">Theo ngày</button>
-      <button class="report-tab ${isMonth ? 'active' : ''}" onclick="renderReports('month')">Theo tháng</button>
-    </div>
-
-    <div class="report-filter panel">
-      <label class="report-date-label">${inputLabel}
-        <input id="reportDate" type="${inputType}" value="${selected}">
-      </label>
-      <button class="btn primary report-view-btn" onclick="loadRevenueReport('${mode}')">Xem doanh thu</button>
-    </div>
-
-    <div id="reportResult" class="report-result">
-      <div class="report-hint">Chọn ${isMonth ? 'tháng' : 'ngày'} rồi bấm “Xem doanh thu”</div>
-    </div>
-  </div>`;
-
-  // Nếu đã chọn ngày/tháng thì tự tải luôn để tránh màn hình trống.
-  await loadRevenueReport(mode, true);
-}
-
-async function loadRevenueReport(mode = 'day', silent = false) {
-  const input = $('#reportDate');
-  const result = $('#reportResult');
-  if (!input || !result || !input.value) return;
-
-  let from = input.value;
-  let to = input.value;
-
-  if (mode === 'month') {
-    const [year, month] = input.value.split('-').map(Number);
-    const lastDay = new Date(year, month, 0).getDate();
-    to = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-  }
-
-  try {
-    if (!silent) result.innerHTML = '<div class="report-loading">Đang tải doanh thu...</div>';
-
-    const data = await api(`/api/admin/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
-    const summary = data.summary || { total: 0, orders: 0, cash: 0, transfer: 0 };
-    const staff = data.byStaff || [];
-    const byDay = data.byDay || [];
-
-    result.innerHTML = `
-      <div class="report-summary-grid">
-        <div class="report-stat"><span>Doanh thu</span><strong>${money(summary.total)}</strong></div>
-        <div class="report-stat"><span>Số đơn</span><strong>${summary.orders || 0}</strong></div>
-        <div class="report-stat"><span>Tiền mặt</span><strong>${money(summary.cash)}</strong></div>
-        <div class="report-stat"><span>Chuyển khoản</span><strong>${money(summary.transfer)}</strong></div>
-      </div>
-
-      <div class="report-columns">
-        <div class="panel report-panel">
-          <div class="report-panel-head"><h3>Doanh thu theo nhân viên</h3></div>
-          ${staff.length ? `<table class="data-table"><thead><tr><th>Nhân viên</th><th>Số đơn</th><th>Doanh thu</th></tr></thead><tbody>${staff.map(u => `<tr><td>${esc(u.fullName)}</td><td>${u.orders}</td><td><b>${money(u.revenue)}</b></td></tr>`).join('')}</tbody></table>` : '<div class="empty">Chưa có đơn hàng trong khoảng thời gian này.</div>'}
-        </div>
-
-        <div class="panel report-panel">
-          <div class="report-panel-head"><h3>${mode === 'month' ? 'Doanh thu từng ngày' : 'Tổng quan'}</h3></div>
-          ${mode === 'month' && byDay.length ? `<table class="data-table"><thead><tr><th>Ngày</th><th>Số đơn</th><th>Doanh thu</th></tr></thead><tbody>${byDay.map(d => `<tr><td>${d.day}</td><td>${d.orders}</td><td><b>${money(d.revenue)}</b></td></tr>`).join('')}</tbody></table>` : `<div class="report-period-box"><span>${mode === 'month' ? 'Tháng' : 'Ngày'}</span><strong>${mode === 'month' ? input.value : input.value.split('-').reverse().join('/')}</strong><small>${summary.orders || 0} đơn đã thanh toán</small></div>`}
-        </div>
-      </div>`;
-  } catch (e) {
-    result.innerHTML = `<div class="report-error"><strong>Không thể tải doanh thu</strong><span>${esc(e.message || 'Có lỗi xảy ra')}</span><button class="btn" onclick="loadRevenueReport('${mode}')">Thử lại</button></div>`;
-    if (!silent) toast(e.message || 'Không thể tải doanh thu', true);
-  }
-}
-
 async function renderUsers() {
   const users = await api('/api/admin/users');
   state.userList = users;
@@ -446,7 +392,159 @@ async function deleteUser(id) {
     onConfirm: async () => {
       await api('/api/admin/users/' + id, {method:'DELETE'});
       toast('Đã khóa tài khoản');
-      renderUsers();
+      await renderUsers();
     }
   });
 }
+
+async function renderSettings() {
+  const menu = await api('/api/menu');
+  const categories = state.categories || [];
+  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Cài đặt</h1><p>Quản lý menu, danh mục, topping và QR chuyển khoản.</p></div></div><div class="report-grid"><section class="section-card"><div class="settings-section-head"><h3>Menu món</h3><button class="btn primary" onclick="menuForm()">+ Thêm món</button></div><div class="category-toolbar"><div><strong>Danh mục</strong><span class="muted"> Thêm, sửa hoặc xóa danh mục</span></div><button class="btn" onclick="categoryForm()">+ Thêm danh mục</button></div><div class="category-chips">${categories.map(c => `<div class="category-chip"><span>${esc(c.name)}</span><button type="button" onclick='categoryForm(${JSON.stringify(c)})' aria-label="Sửa danh mục">Sửa</button><button type="button" class="danger-text" onclick="deleteCategory(${c.id})" aria-label="Xóa danh mục">Xóa</button></div>`).join('')}</div><div class="table-card" style="margin-top:15px"><table class="data-table"><thead><tr><th>Món</th><th>Danh mục</th><th>Giá</th><th></th></tr></thead><tbody>${menu.map(m => `<tr><td><img class="avatar" src="${m.image || '/assets/logo.png'}">${esc(m.name)}</td><td>${esc(m.category)}</td><td>${money(m.price)}</td><td><button class="btn small" onclick='menuForm(${JSON.stringify(m)})'>Sửa</button> <button class="btn small danger" onclick="deleteMenu(${m.id})">Xóa</button></td></tr>`).join('')}</tbody></table></div></section><section class="section-card"><h3>QR chuyển khoản</h3><p class="muted">Ảnh này sẽ hiện cho nhân viên khi chọn chuyển khoản.</p>${state.qr ? `<img class="qr-preview" src="${state.qr}">` : '<div class="empty">Chưa có QR</div>'}<form id="qrForm" style="margin-top:14px"><input type="file" id="qrFile" accept="image/*"><button class="btn primary" style="margin-top:10px" type="submit">Upload QR</button></form><hr><div class="settings-section-head"><h3>Topping</h3><button class="btn" onclick="toppingForm()">+ Thêm topping</button></div><div>${state.toppings.map(t => `<div class="topping"><span>${esc(t.name)} · ${money(t.price)}</span><button class="btn small danger" onclick="deleteTop(${t.id})">Xóa</button></div>`).join('')}</div></section></div></div>`;
+  $('#qrForm').onsubmit = uploadQR;
+}
+
+function categoryForm(c = {}, returnToMenu = false) {
+  openModal(`<h3>${c.id ? 'Sửa danh mục' : 'Thêm danh mục'}</h3><form id="categoryForm"><label>Tên danh mục<input id="catName" value="${esc(c.name || '')}" maxlength="40" placeholder="Ví dụ: Sinh tố" required></label><div class="modal-actions"><button type="button" class="btn" onclick="closeModal()">Hủy</button><button class="btn primary">Lưu</button></div></form>`);
+  $('#categoryForm').onsubmit = async e => {
+    e.preventDefault();
+    const name = $('#catName').value.trim();
+    if (!name) return;
+    try {
+      await api(c.id ? `/api/admin/categories/${c.id}` : '/api/admin/categories', {method:c.id ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name})});
+      closeModal();
+      await loadBase();
+      toast(c.id ? 'Đã sửa danh mục' : 'Đã thêm danh mục');
+      if (returnToMenu) menuForm({...window.__menuDraft, category:name}); else renderSettings();
+    } catch (e) { toast(e.message, true); }
+  };
+}
+
+async function deleteCategory(id) {
+  const c = state.categories?.find(x => x.id === id);
+  confirmDelete({
+    title: 'Xóa danh mục?',
+    message: 'Bạn có chắc muốn xóa danh mục',
+    item: c?.name ? c.name + '?' : 'này?',
+    onConfirm: async () => {
+      await api('/api/admin/categories/' + id, {method:'DELETE'});
+      await loadBase();
+      await renderSettings();
+      toast('Đã xóa danh mục');
+    }
+  });
+}
+
+function menuForm(m = {}) {
+  const cats = state.categories || [];
+  openModal(`<h3>${m.id ? 'Sửa món' : 'Thêm món'}</h3><form id="menuForm"><div class="form-grid"><label>Tên món<input id="mName" value="${esc(m.name || '')}" required></label><label>Danh mục<div class="inline-select"><select id="mCat">${cats.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('')}</select><button type="button" class="btn small" onclick="window.__menuDraft={id:${m.id || 'null'},name:$('#mName').value,category:$('#mCat').value,price:$('#mPrice').value};closeModal();categoryForm({}, true)">+ Thêm</button></div></label><label>Giá<input id="mPrice" type="number" value="${m.price || 0}" min="0" required></label><label>Ảnh<input id="mImage" type="file" accept="image/*"></label></div><p class="form-hint">Bạn có thể tạo danh mục mới ngay tại đây bằng nút <b>+ Thêm</b>.</p><div class="modal-actions"><button type="button" class="btn" onclick="closeModal()">Hủy</button><button class="btn primary">Lưu</button></div></form></div>`);
+  if (m.category) $('#mCat').value = m.category;
+  $('#menuForm').onsubmit = e => saveMenu(e, m.id);
+}
+
+async function saveMenu(e, id) {
+  e.preventDefault();
+  const fd = new FormData();
+  fd.append('name', $('#mName').value); fd.append('category', $('#mCat').value); fd.append('price', $('#mPrice').value);
+  if ($('#mImage').files[0]) fd.append('image', $('#mImage').files[0]);
+  try { await api(id ? `/api/admin/menu/${id}` : '/api/admin/menu', {method:id ? 'PUT' : 'POST', body:fd}); closeModal(); await loadBase(); toast('Đã lưu món'); renderSettings(); }
+  catch (e) { toast(e.message, true); }
+}
+
+async function deleteMenu(id) {
+  const m = state.menu?.find(x => x.id === id);
+  confirmDelete({
+    title: 'Xóa sản phẩm?',
+    message: 'Bạn có chắc muốn xóa sản phẩm',
+    item: m?.name ? m.name + '?' : 'này?',
+    onConfirm: async () => {
+      await api('/api/admin/menu/' + id, {method:'DELETE'});
+      await loadBase();
+      await renderSettings();
+      toast('Đã xóa sản phẩm');
+    }
+  });
+}
+function toppingForm() { openModal(`<h3>Thêm topping</h3><label>Tên topping<input id="tName"></label><label>Giá<input id="tPrice" type="number" value="0"></label><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="saveTop()">Lưu</button></div>`); }
+async function saveTop() { await api('/api/admin/toppings', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('#tName').value,price:$('#tPrice').value})}); closeModal(); await loadBase(); renderSettings(); }
+async function deleteTop(id) {
+  const t = state.toppings?.find(x => x.id === id);
+  confirmDelete({
+    title: 'Xóa topping?',
+    message: 'Bạn có chắc muốn xóa topping',
+    item: t?.name ? t.name + '?' : 'này?',
+    onConfirm: async () => {
+      await api('/api/admin/toppings/' + id,{method:'DELETE'});
+      await loadBase();
+      await renderSettings();
+      toast('Đã xóa topping');
+    }
+  });
+}
+async function uploadQR(e) { e.preventDefault(); const f = $('#qrFile').files[0]; if (!f) return toast('Chọn file QR', true); const fd = new FormData(); fd.append('qr', f); try { await api('/api/admin/qr', {method:'POST',body:fd}); await loadBase(); toast('Đã upload QR'); renderSettings(); } catch(e) { toast(e.message,true); } }
+
+async function renderReports() {
+  const today = new Date().toISOString().slice(0,10);
+  const month = today.slice(0,7);
+  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Doanh thu</h1><p>Chọn cách xem doanh thu.</p></div></div><div class="report-tabs"><button class="report-tab active" id="reportDayTab" onclick="showReportMode('day')">Theo ngày</button><button class="report-tab" id="reportMonthTab" onclick="showReportMode('month')">Theo tháng</button></div><div id="reportControls"></div><div id="reportArea"><div class="empty">Chọn ngày hoặc tháng để xem doanh thu</div></div></div>`;
+  showReportMode('day');
+}
+
+function showReportMode(mode) {
+  $('#reportDayTab')?.classList.toggle('active', mode === 'day');
+  $('#reportMonthTab')?.classList.toggle('active', mode === 'month');
+  const today = new Date().toISOString().slice(0,10);
+  const month = today.slice(0,7);
+  if (mode === 'day') {
+    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn ngày<input id="reportDate" type="date" value="${today}"></label><button class="btn primary" onclick="loadReportDay()">Xem doanh thu</button></div>`;
+    $('#reportArea').innerHTML = '<div class="empty">Chọn ngày rồi bấm “Xem doanh thu”</div>';
+  } else {
+    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn tháng<input id="reportMonth" type="month" value="${month}"></label><button class="btn primary" onclick="loadReportMonth()">Xem doanh thu</button></div>`;
+    $('#reportArea').innerHTML = '<div class="empty">Chọn tháng rồi bấm “Xem doanh thu”</div>';
+  }
+}
+
+async function loadReportDay() {
+  const date = $('#reportDate').value;
+  if (!date) return toast('Hãy chọn ngày', true);
+  await loadReportRange(date, date, `Doanh thu ngày ${date.split('-').reverse().join('/')}`);
+}
+
+async function loadReportMonth() {
+  const month = $('#reportMonth').value;
+  if (!month) return toast('Hãy chọn tháng', true);
+  const [year, m] = month.split('-').map(Number);
+  const last = new Date(year, m, 0).getDate();
+  const from = `${year}-${String(m).padStart(2,'0')}-01`;
+  const to = `${year}-${String(m).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
+  await loadReportRange(from, to, `Doanh thu tháng ${String(m).padStart(2,'0')}/${year}`);
+}
+
+async function loadReportRange(from, to, title) {
+  try {
+    const d = await api(`/api/admin/reports/summary?from=${from}&to=${to}`);
+    const s = d.summary;
+    $('#reportArea').innerHTML = `<div class="report-result-title"><h2>${title}</h2><span>${s.orders} đơn hàng</span></div><div class="stats"><div class="stat"><span>Doanh thu</span><strong>${money(s.total)}</strong></div><div class="stat"><span>Số đơn</span><strong>${s.orders}</strong></div><div class="stat"><span>Tiền mặt</span><strong>${money(s.cash)}</strong></div><div class="stat"><span>Chuyển khoản</span><strong>${money(s.transfer)}</strong></div></div><div class="report-grid"><section class="section-card"><h3>Theo nhân viên</h3><table class="data-table"><thead><tr><th>Nhân viên</th><th>Đơn</th><th>Doanh thu</th></tr></thead><tbody>${d.byStaff.map(x => `<tr><td>${esc(x.fullName)}</td><td>${x.orders}</td><td><b>${money(x.revenue)}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">Chưa có dữ liệu</td></tr>'}</tbody></table></section><section class="section-card"><h3>Theo ngày</h3><table class="data-table"><thead><tr><th>Ngày</th><th>Đơn</th><th>Doanh thu</th></tr></thead><tbody>${d.byDay.map(x => `<tr><td>${x.day}</td><td>${x.orders}</td><td><b>${money(x.revenue)}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">Chưa có dữ liệu</td></tr>'}</tbody></table></section></div>`;
+  } catch (e) { toast(e.message, true); }
+}
+window.showReportMode = showReportMode;
+window.loadReportDay = loadReportDay;
+window.loadReportMonth = loadReportMonth;
+
+function openModal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.remove('hidden'); }
+function closeModal() { $('#modal').classList.add('hidden'); window.__productDraft = null; window.__editIndex = null; }
+window.closeModal = closeModal;
+
+async function logout() { await api('/api/auth/logout',{method:'POST'}).catch(()=>{}); location.reload(); }
+
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try { await api('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#loginUser').value,password:$('#loginPass').value})}); await boot(); }
+  catch(e) { toast(e.message,true); }
+});
+$('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='password'?'text':'password'; $('#togglePass').textContent=i.type==='password'?'Hiện':'Ẩn'; };
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
+
+Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+boot();
