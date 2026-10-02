@@ -141,8 +141,14 @@ app.get('/api/admin/reports/recent-orders',auth,adminOnly,async(req,res)=>{
   res.json({orders:r.rows});
 });
 
+function localDateString() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const get = (type) => parts.find(p => p.type === type)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 function reportBounds(from, to) {
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDateString();
   return {
     start: from ? `${from} 00:00:00` : `${today} 00:00:00`,
     end: to ? `${to} 23:59:59` : `${today} 23:59:59`
@@ -240,8 +246,8 @@ app.post('/api/admin/qr',auth,adminOnly,upload.single('qr'),async(req,res)=>{if(
 
 app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
   const {from,to}=req.query;
-  const start=from?`${from} 00:00:00`:`${new Date().toISOString().slice(0,10)} 00:00:00`;
-  const end=to?`${to} 23:59:59`:`${new Date().toISOString().slice(0,10)} 23:59:59`;
+  const start=from?`${from} 00:00:00`:`${localDateString()} 00:00:00`;
+  const end=to?`${to} 23:59:59`:`${localDateString()} 23:59:59`;
   const total=await q(`SELECT COALESCE(SUM(total),0)::int total,COUNT(*)::int orders,COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END),0)::int cash,COALESCE(SUM(CASE WHEN payment_method='transfer' THEN total ELSE 0 END),0)::int transfer FROM orders WHERE created_at BETWEEN $1 AND $2 AND status='paid'`,[start,end]);
   const byStaff=await q(`SELECT u.id,u.full_name AS "fullName",COUNT(o.id)::int orders,COALESCE(SUM(o.total),0)::int revenue FROM users u LEFT JOIN orders o ON o.user_id=u.id AND o.created_at BETWEEN $1 AND $2 AND o.status='paid' GROUP BY u.id ORDER BY revenue DESC`,[start,end]);
   const byDay=await q(`SELECT TO_CHAR(created_at,'YYYY-MM-DD') day,COUNT(*)::int orders,COALESCE(SUM(total),0)::int revenue FROM orders WHERE created_at BETWEEN $1 AND $2 AND status='paid' GROUP BY 1 ORDER BY 1`,[start,end]);

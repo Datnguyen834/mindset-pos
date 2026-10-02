@@ -16,6 +16,15 @@ let state = {
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
 const esc = (s) => String(s ?? '').replace(/[&<>'"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]));
 
+// Ngày hiện tại theo giờ Việt Nam/local browser, không dùng UTC để tránh lệch sang ngày hôm trước.
+function localDateString() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function toast(msg, err = false) {
   const el = document.createElement('div');
   el.className = 'toast' + (err ? ' err' : '');
@@ -603,7 +612,7 @@ async function deleteTop(id) {
 async function uploadQR(e) { e.preventDefault(); const f = $('#qrFile').files[0]; if (!f) return toast('Chọn file QR', true); const fd = new FormData(); fd.append('qr', f); try { await api('/api/admin/qr', {method:'POST',body:fd}); await loadBase(); toast('Đã upload QR'); renderSettings(); } catch(e) { toast(e.message,true); } }
 
 async function renderReports() {
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDateString();
   const month = today.slice(0,7);
   $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Doanh thu</h1><p>Chọn cách xem doanh thu.</p></div></div><div class="report-tabs"><button class="report-tab active" id="reportDayTab" onclick="showReportMode('day')">Theo ngày</button><button class="report-tab" id="reportMonthTab" onclick="showReportMode('month')">Theo tháng</button></div><div id="reportControls"></div><div id="reportArea"><div class="empty">Chọn ngày hoặc tháng để xem doanh thu</div></div></div>`;
   showReportMode('day');
@@ -612,7 +621,7 @@ async function renderReports() {
 function showReportMode(mode) {
   $('#reportDayTab')?.classList.toggle('active', mode === 'day');
   $('#reportMonthTab')?.classList.toggle('active', mode === 'month');
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDateString();
   const month = today.slice(0,7);
   if (mode === 'day') {
     $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn ngày<input id="reportDate" type="date" value="${today}"></label><button class="btn primary" onclick="loadReportDay()">Xem doanh thu</button></div>`;
