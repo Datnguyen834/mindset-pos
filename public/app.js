@@ -653,12 +653,41 @@ function openModal(html) { $('#modalBox').innerHTML = html; $('#modal').classLis
 function closeModal() { $('#modal').classList.add('hidden'); window.__productDraft = null; window.__editIndex = null; }
 window.closeModal = closeModal;
 
-async function logout() { await api('/api/auth/logout',{method:'POST'}).catch(()=>{}); location.reload(); }
+async function enterAppFullscreen() {
+  if (document.fullscreenElement) return true;
+  try {
+    await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function exitAppFullscreen() {
+  if (!document.fullscreenElement) return;
+  try { await document.exitFullscreen(); } catch {}
+}
+
+async function logout() {
+  await api('/api/auth/logout',{method:'POST'}).catch(()=>{});
+  await exitAppFullscreen();
+  location.reload();
+}
 
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
-  try { await api('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#loginUser').value,password:$('#loginPass').value})}); await boot(); }
-  catch(e) { toast(e.message,true); }
+
+  // Gọi ngay trong thao tác click/submit của người dùng để trình duyệt
+  // cho phép vào fullscreen. Nếu đăng nhập thất bại, thoát fullscreen lại.
+  const fullscreenStarted = await enterAppFullscreen();
+
+  try {
+    await api('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#loginUser').value,password:$('#loginPass').value})});
+    await boot();
+  } catch(e) {
+    if (fullscreenStarted) await exitAppFullscreen();
+    toast(e.message,true);
+  }
 });
 $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='password'?'text':'password'; $('#togglePass').textContent=i.type==='password'?'Hiện':'Ẩn'; };
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
