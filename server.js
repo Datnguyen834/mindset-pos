@@ -148,10 +148,11 @@ function localDateString() {
 }
 
 function reportBounds(from, to) {
+  // PostgreSQL/Render thường chạy UTC. Gắn +07:00 để mọi báo cáo tính đúng ngày Việt Nam.
   const today = localDateString();
   return {
-    start: from ? `${from} 00:00:00` : `${today} 00:00:00`,
-    end: to ? `${to} 23:59:59` : `${today} 23:59:59`
+    start: `${from || today}T00:00:00+07:00`,
+    end: `${to || today}T23:59:59.999+07:00`
   };
 }
 
@@ -246,11 +247,12 @@ app.post('/api/admin/qr',auth,adminOnly,upload.single('qr'),async(req,res)=>{if(
 
 app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
   const {from,to}=req.query;
-  const start=from?`${from} 00:00:00`:`${localDateString()} 00:00:00`;
-  const end=to?`${to} 23:59:59`:`${localDateString()} 23:59:59`;
+  const today=localDateString();
+  const start=`${from || today}T00:00:00+07:00`;
+  const end=`${to || today}T23:59:59.999+07:00`;
   const total=await q(`SELECT COALESCE(SUM(total),0)::int total,COUNT(*)::int orders,COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END),0)::int cash,COALESCE(SUM(CASE WHEN payment_method='transfer' THEN total ELSE 0 END),0)::int transfer FROM orders WHERE created_at BETWEEN $1 AND $2 AND status='paid'`,[start,end]);
   const byStaff=await q(`SELECT u.id,u.full_name AS "fullName",COUNT(o.id)::int orders,COALESCE(SUM(o.total),0)::int revenue FROM users u LEFT JOIN orders o ON o.user_id=u.id AND o.created_at BETWEEN $1 AND $2 AND o.status='paid' GROUP BY u.id ORDER BY revenue DESC`,[start,end]);
-  const byDay=await q(`SELECT TO_CHAR(created_at,'YYYY-MM-DD') day,COUNT(*)::int orders,COALESCE(SUM(total),0)::int revenue FROM orders WHERE created_at BETWEEN $1 AND $2 AND status='paid' GROUP BY 1 ORDER BY 1`,[start,end]);
+  const byDay=await q(`SELECT TO_CHAR(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD') day,COUNT(*)::int orders,COALESCE(SUM(total),0)::int revenue FROM orders WHERE created_at BETWEEN $1 AND $2 AND status='paid' GROUP BY 1 ORDER BY 1`,[start,end]);
   res.json({summary:total.rows[0],byStaff:byStaff.rows,byDay:byDay.rows});
 });
 app.get(/.*/,(req,res)=>res.sendFile(path.join(__dirname,'public/index.html')));

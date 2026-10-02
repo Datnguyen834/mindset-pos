@@ -16,13 +16,14 @@ let state = {
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
 const esc = (s) => String(s ?? '').replace(/[&<>'"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]));
 
-// Ngày hiện tại theo giờ Việt Nam/local browser, không dùng UTC để tránh lệch sang ngày hôm trước.
+// Ngày hiện tại theo đúng múi giờ Việt Nam (UTC+7), độc lập với múi giờ máy/browser.
 function localDateString() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const get = (type) => parts.find(p => p.type === type)?.value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 function toast(msg, err = false) {
@@ -373,8 +374,7 @@ function setRevenueMode(mode) {
   window.__revenueMode = mode;
   $('#revDayTab')?.classList.toggle('active', mode === 'day');
   $('#revMonthTab')?.classList.toggle('active', mode === 'month');
-  const now = new Date();
-  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0,10);
+  const today = localDateString();
   const month = today.slice(0,7);
   $('#revenueDateControls').innerHTML = mode === 'day'
     ? `<div class="revenue-selector"><label>Chọn ngày<input id="revenueDate" type="date" value="${today}"></label><button class="btn primary" onclick="loadStaffRevenue()">Xem doanh thu</button></div>`
