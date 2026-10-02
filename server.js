@@ -32,7 +32,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const q = (text, params=[]) => pool.query(text, params);
 
 async function initDb() {
-  const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+  const schema = fs.readFileSync(path.join(__dirname, 'db', 'schema.sql'), 'utf8');
   await q(schema);
   const count = await q('SELECT COUNT(*)::int AS n FROM users');
   if (count.rows[0].n === 0) {
