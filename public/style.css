@@ -136,7 +136,7 @@ body{font-size:15px}
 .report-selector{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:18px;padding:14px 16px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
 .report-selector label{display:flex;flex-direction:column;gap:6px;font-weight:800;color:#53605a}
 .report-selector input{min-width:190px;height:42px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;font:inherit;background:#fff}
-.report-selector > .btn{height:42px;min-height:42px;display:inline-flex;align-items:center;justify-content:center;margin:0;padding:0 16px;align-self:flex-end;white-space:nowrap}.report-reset-btn{border-color:#e7b4ae!important;background:#fff7f5!important;color:#b23a30!important}.report-reset-btn:hover{background:#fff0ed!important}
+.report-selector > .btn{height:42px;min-height:42px;display:inline-flex;align-items:center;justify-content:center;margin:0;padding:0 16px;align-self:flex-end;white-space:nowrap}
 .report-result-title{display:flex;align-items:center;justify-content:space-between;margin:8px 0 14px}
 .report-result-title h2{margin:0;font-size:22px}
 .report-result-title span{color:var(--muted);font-weight:700}

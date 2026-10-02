@@ -496,10 +496,10 @@ function showReportMode(mode) {
   const today = new Date().toISOString().slice(0,10);
   const month = today.slice(0,7);
   if (mode === 'day') {
-    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn ngày<input id="reportDate" type="date" value="${today}"></label><button class="btn primary" onclick="loadReportDay()">Xem doanh thu</button><button class="btn danger report-reset-btn" onclick="resetSelectedReport('day')">Reset doanh thu ngày này</button></div>`;
+    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn ngày<input id="reportDate" type="date" value="${today}"></label><button class="btn primary" onclick="loadReportDay()">Xem doanh thu</button></div>`;
     $('#reportArea').innerHTML = '<div class="empty">Chọn ngày rồi bấm “Xem doanh thu”</div>';
   } else {
-    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn tháng<input id="reportMonth" type="month" value="${month}"></label><button class="btn primary" onclick="loadReportMonth()">Xem doanh thu</button><button class="btn danger report-reset-btn" onclick="resetSelectedReport('month')">Reset doanh thu tháng này</button></div>`;
+    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn tháng<input id="reportMonth" type="month" value="${month}"></label><button class="btn primary" onclick="loadReportMonth()">Xem doanh thu</button></div>`;
     $('#reportArea').innerHTML = '<div class="empty">Chọn tháng rồi bấm “Xem doanh thu”</div>';
   }
 }
@@ -530,40 +530,6 @@ async function loadReportRange(from, to, title) {
 window.showReportMode = showReportMode;
 window.loadReportDay = loadReportDay;
 window.loadReportMonth = loadReportMonth;
-window.resetSelectedReport = resetSelectedReport;
-
-async function resetSelectedReport(mode) {
-  let from = '', to = '', label = '';
-  if (mode === 'day') {
-    const date = $('#reportDate')?.value;
-    if (!date) return toast('Hãy chọn ngày', true);
-    from = date; to = date;
-    label = `ngày ${date.split('-').reverse().join('/')}`;
-  } else {
-    const month = $('#reportMonth')?.value;
-    if (!month) return toast('Hãy chọn tháng', true);
-    const [year, m] = month.split('-').map(Number);
-    const last = new Date(year, m, 0).getDate();
-    from = `${year}-${String(m).padStart(2,'0')}-01`;
-    to = `${year}-${String(m).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
-    label = `tháng ${String(m).padStart(2,'0')}/${year}`;
-  }
-  confirmDelete({
-    title: 'Reset doanh thu?',
-    message: `Toàn bộ doanh thu của ${label} sẽ được đưa về 0. Các đơn vẫn được giữ lại trong hệ thống nhưng không còn được tính vào doanh thu. Bạn có chắc muốn tiếp tục?`,
-    item: '',
-    onConfirm: async () => {
-      const result = await api('/api/admin/reports/reset', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({from, to})
-      });
-      toast(`Đã reset ${result.affected || 0} đơn của ${label}`);
-      await loadReportRange(from, to, mode === 'day' ? `Doanh thu ${label}` : `Doanh thu ${label}`);
-    }
-  });
-  $('#confirmDeleteButton').textContent = 'Reset doanh thu';
-}
 
 function openModal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.remove('hidden'); }
 function closeModal() { $('#modal').classList.add('hidden'); window.__productDraft = null; window.__editIndex = null; }

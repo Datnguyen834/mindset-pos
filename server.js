@@ -181,19 +181,6 @@ app.delete('/api/admin/toppings/:id',auth,adminOnly,async(req,res)=>{await q('UP
 
 app.post('/api/admin/qr',auth,adminOnly,upload.single('qr'),async(req,res)=>{if(!req.file)return res.status(400).json({message:'Chưa chọn file'});const data=`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;await q("UPDATE settings SET value=$1 WHERE key='payment_qr'",[data]);res.json({image:data});});
 
-app.post('/api/admin/reports/reset',auth,adminOnly,async(req,res)=>{
-  const {from,to}=req.body || {};
-  if(!from || !to) return res.status(400).json({message:'Thiếu ngày cần reset'});
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return res.status(400).json({message:'Ngày không hợp lệ'});
-  if(from > to) return res.status(400).json({message:'Khoảng ngày không hợp lệ'});
-  try {
-    const r = await q(`UPDATE orders SET status='void' WHERE created_at >= $1::date AND created_at < ($2::date + INTERVAL '1 day') AND status='paid'`,[from,to]);
-    res.json({ok:true,affected:r.rowCount});
-  } catch(e) {
-    res.status(400).json({message:e.message || 'Không thể reset doanh thu'});
-  }
-});
-
 app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
   const {from,to}=req.query;
   const start=from?`${from} 00:00:00`:`${new Date().toISOString().slice(0,10)} 00:00:00`;
