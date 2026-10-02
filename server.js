@@ -114,9 +114,24 @@ app.post('/api/orders',auth,async(req,res)=>{
   }catch(e){await client.query('ROLLBACK');res.status(400).json({message:e.message||'Không tạo được đơn'});}finally{client.release();}
 });
 
-app.get('/api/admin/reports/recent-orders',auth,async(req,res)=>{
+app.get('/api/admin/reports/recent-orders',auth,adminOnly,async(req,res)=>{
   const r=await q(`SELECT o.id,o.created_at,o.payment_method,o.total,u.full_name AS "fullName" FROM orders o JOIN users u ON u.id=o.user_id ORDER BY o.id DESC LIMIT 100`);
   res.json({orders:r.rows});
+});
+
+app.get('/api/admin/orders/staff',auth,adminOnly,async(req,res)=>{
+  const r=await q(`SELECT u.id,u.full_name AS "fullName",COUNT(o.id)::int AS orders,COALESCE(SUM(o.total),0)::int AS revenue
+    FROM users u LEFT JOIN orders o ON o.user_id=u.id AND o.status='paid'
+    WHERE u.role='staff'
+    GROUP BY u.id,u.full_name ORDER BY u.full_name`);
+  res.json({staff:r.rows});
+});
+
+app.get('/api/admin/orders/staff/:id',auth,adminOnly,async(req,res)=>{
+  const staff=await q(`SELECT id,full_name AS "fullName" FROM users WHERE id=$1 AND role='staff'`,[req.params.id]);
+  if(!staff.rowCount) return res.status(404).json({message:'Không tìm thấy nhân viên'});
+  const r=await q(`SELECT o.id,o.created_at,o.payment_method,o.total FROM orders o WHERE o.user_id=$1 AND o.status='paid' ORDER BY o.created_at DESC,o.id DESC`,[req.params.id]);
+  res.json({staff:staff.rows[0],orders:r.rows});
 });
 
 app.get('/api/orders/:id',auth,async(req,res)=>{

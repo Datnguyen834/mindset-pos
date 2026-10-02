@@ -73,6 +73,7 @@ async function loadBase() {
 }
 
 function renderPage() {
+  $('#page').className = state.page === 'pos' ? 'pos-page' : '';
   if (state.page === 'pos') renderPOS();
   if (state.page === 'orders') renderOrders();
   if (state.page === 'reports') renderReports();
@@ -306,10 +307,18 @@ async function completePayment(method) {
 }
 
 async function renderOrders() {
-  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Đơn hàng</h1><p>Lịch sử đơn hàng và hóa đơn.</p></div></div><div class="panel"><table class="data-table"><thead><tr><th>Mã</th><th>Thời gian</th><th>Nhân viên</th><th>Thanh toán</th><th>Tổng</th><th></th></tr></thead><tbody id="ordersBody"><tr><td colspan="6">Đang tải...</td></tr></tbody></table></div></div>`;
-  const list = await api('/api/admin/reports/recent-orders').catch(() => ({orders:[]}));
-  $('#ordersBody').innerHTML = (list.orders || []).map(o => `<tr><td>#${o.id}</td><td>${fmtDate(o.created_at)}</td><td>${esc(o.fullName)}</td><td>${o.payment_method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản'}</td><td><b>${money(o.total)}</b></td><td><button class="btn small" onclick="printOrder(${o.id})">In hóa đơn</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Chưa có đơn hàng</td></tr>';
+  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Đơn hàng</h1><p>Chọn nhân viên để xem các đơn hàng nhân viên đó đã bán.</p></div></div><div id="staffOrdersArea"><div class="empty">Đang tải danh sách nhân viên...</div></div></div>`;
+  const list = await api('/api/admin/orders/staff').catch(() => ({staff:[]}));
+  const staff = list.staff || [];
+  $('#staffOrdersArea').innerHTML = staff.length ? `<div class="staff-order-grid">${staff.map(u => `<button class="staff-order-card" onclick="showStaffOrders(${u.id}, '${esc(u.fullName).replace(/'/g, "\\'")}')"><div class="staff-order-icon">♙</div><div class="staff-order-info"><strong>${esc(u.fullName)}</strong><span>${u.orders} đơn · ${money(u.revenue)}</span></div><span class="staff-order-arrow">›</span></button>`).join('')}</div>` : '<div class="empty">Chưa có nhân viên phát sinh đơn hàng</div>';
 }
+
+async function showStaffOrders(staffId, staffName) {
+  $('#staffOrdersArea').innerHTML = `<div class="page-title compact-title"><div><h2 style="margin:0">Đơn hàng của ${esc(staffName)}</h2><p>Danh sách các đơn hàng nhân viên này đã bán.</p></div><button class="btn" onclick="renderOrders()">← Danh sách nhân viên</button></div><div class="panel"><table class="data-table"><thead><tr><th>Mã</th><th>Thời gian</th><th>Thanh toán</th><th>Tổng</th><th></th></tr></thead><tbody id="ordersBody"><tr><td colspan="5">Đang tải...</td></tr></tbody></table></div>`;
+  const list = await api('/api/admin/orders/staff/' + staffId).catch(() => ({orders:[]}));
+  $('#ordersBody').innerHTML = (list.orders || []).map(o => `<tr><td>#${o.id}</td><td>${fmtDate(o.created_at)}</td><td>${o.payment_method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản'}</td><td><b>${money(o.total)}</b></td><td><button class="btn small" onclick="printOrder(${o.id})">In hóa đơn</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Nhân viên này chưa có đơn hàng</td></tr>';
+}
+window.showStaffOrders = showStaffOrders;
 
 async function printOrder(id) {
   const o = await api('/api/orders/' + id);
@@ -370,16 +379,51 @@ async function uploadQR(e) { e.preventDefault(); const f = $('#qrFile').files[0]
 
 async function renderReports() {
   const today = new Date().toISOString().slice(0,10);
-  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Doanh thu</h1><p>Thống kê theo ngày, tháng và nhân viên.</p></div><div class="toolbar"><input id="from" type="date" value="${today}"><input id="to" type="date" value="${today}"><button class="btn primary" onclick="loadReport()">Xem</button></div></div><div id="reportArea"><div class="empty">Chọn khoảng thời gian</div></div></div>`;
-  loadReport();
+  const month = today.slice(0,7);
+  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Doanh thu</h1><p>Chọn cách xem doanh thu.</p></div></div><div class="report-tabs"><button class="report-tab active" id="reportDayTab" onclick="showReportMode('day')">Theo ngày</button><button class="report-tab" id="reportMonthTab" onclick="showReportMode('month')">Theo tháng</button></div><div id="reportControls"></div><div id="reportArea"><div class="empty">Chọn ngày hoặc tháng để xem doanh thu</div></div></div>`;
+  showReportMode('day');
 }
 
-async function loadReport() {
-  const f = $('#from').value, t = $('#to').value;
-  const d = await api(`/api/admin/reports/summary?from=${f}&to=${t}`);
-  const s = d.summary;
-  $('#reportArea').innerHTML = `<div class="stats"><div class="stat"><span>Doanh thu</span><strong>${money(s.total)}</strong></div><div class="stat"><span>Số đơn</span><strong>${s.orders}</strong></div><div class="stat"><span>Tiền mặt</span><strong>${money(s.cash)}</strong></div><div class="stat"><span>Chuyển khoản</span><strong>${money(s.transfer)}</strong></div></div><div class="report-grid"><section class="section-card"><h3>Theo nhân viên</h3><table class="data-table"><thead><tr><th>Nhân viên</th><th>Đơn</th><th>Doanh thu</th></tr></thead><tbody>${d.byStaff.map(x => `<tr><td>${esc(x.fullName)}</td><td>${x.orders}</td><td><b>${money(x.revenue)}</b></td></tr>`).join('')}</tbody></table></section><section class="section-card"><h3>Theo ngày</h3><table class="data-table"><thead><tr><th>Ngày</th><th>Đơn</th><th>Doanh thu</th></tr></thead><tbody>${d.byDay.map(x => `<tr><td>${x.day}</td><td>${x.orders}</td><td><b>${money(x.revenue)}</b></td></tr>`).join('')}</tbody></table></section></div>`;
+function showReportMode(mode) {
+  $('#reportDayTab')?.classList.toggle('active', mode === 'day');
+  $('#reportMonthTab')?.classList.toggle('active', mode === 'month');
+  const today = new Date().toISOString().slice(0,10);
+  const month = today.slice(0,7);
+  if (mode === 'day') {
+    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn ngày<input id="reportDate" type="date" value="${today}"></label><button class="btn primary" onclick="loadReportDay()">Xem doanh thu</button></div>`;
+    $('#reportArea').innerHTML = '<div class="empty">Chọn ngày rồi bấm “Xem doanh thu”</div>';
+  } else {
+    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn tháng<input id="reportMonth" type="month" value="${month}"></label><button class="btn primary" onclick="loadReportMonth()">Xem doanh thu</button></div>`;
+    $('#reportArea').innerHTML = '<div class="empty">Chọn tháng rồi bấm “Xem doanh thu”</div>';
+  }
 }
+
+async function loadReportDay() {
+  const date = $('#reportDate').value;
+  if (!date) return toast('Hãy chọn ngày', true);
+  await loadReportRange(date, date, `Doanh thu ngày ${date.split('-').reverse().join('/')}`);
+}
+
+async function loadReportMonth() {
+  const month = $('#reportMonth').value;
+  if (!month) return toast('Hãy chọn tháng', true);
+  const [year, m] = month.split('-').map(Number);
+  const last = new Date(year, m, 0).getDate();
+  const from = `${year}-${String(m).padStart(2,'0')}-01`;
+  const to = `${year}-${String(m).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
+  await loadReportRange(from, to, `Doanh thu tháng ${String(m).padStart(2,'0')}/${year}`);
+}
+
+async function loadReportRange(from, to, title) {
+  try {
+    const d = await api(`/api/admin/reports/summary?from=${from}&to=${to}`);
+    const s = d.summary;
+    $('#reportArea').innerHTML = `<div class="report-result-title"><h2>${title}</h2><span>${s.orders} đơn hàng</span></div><div class="stats"><div class="stat"><span>Doanh thu</span><strong>${money(s.total)}</strong></div><div class="stat"><span>Số đơn</span><strong>${s.orders}</strong></div><div class="stat"><span>Tiền mặt</span><strong>${money(s.cash)}</strong></div><div class="stat"><span>Chuyển khoản</span><strong>${money(s.transfer)}</strong></div></div><div class="report-grid"><section class="section-card"><h3>Theo nhân viên</h3><table class="data-table"><thead><tr><th>Nhân viên</th><th>Đơn</th><th>Doanh thu</th></tr></thead><tbody>${d.byStaff.map(x => `<tr><td>${esc(x.fullName)}</td><td>${x.orders}</td><td><b>${money(x.revenue)}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">Chưa có dữ liệu</td></tr>'}</tbody></table></section><section class="section-card"><h3>Theo ngày</h3><table class="data-table"><thead><tr><th>Ngày</th><th>Đơn</th><th>Doanh thu</th></tr></thead><tbody>${d.byDay.map(x => `<tr><td>${x.day}</td><td>${x.orders}</td><td><b>${money(x.revenue)}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">Chưa có dữ liệu</td></tr>'}</tbody></table></section></div>`;
+  } catch (e) { toast(e.message, true); }
+}
+window.showReportMode = showReportMode;
+window.loadReportDay = loadReportDay;
+window.loadReportMonth = loadReportMonth;
 
 function openModal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.remove('hidden'); }
 function closeModal() { $('#modal').classList.add('hidden'); window.__productDraft = null; window.__editIndex = null; }
