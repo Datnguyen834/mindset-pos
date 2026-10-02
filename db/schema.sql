@@ -53,7 +53,9 @@ CREATE TABLE IF NOT EXISTS order_items (
   item_name VARCHAR(120) NOT NULL,
   unit_price INTEGER NOT NULL,
   quantity INTEGER NOT NULL CHECK (quantity > 0),
-  line_total INTEGER NOT NULL
+  line_total INTEGER NOT NULL,
+  sugar_percent INTEGER NOT NULL DEFAULT 100 CHECK (sugar_percent BETWEEN 0 AND 100),
+  ice_percent INTEGER NOT NULL DEFAULT 100 CHECK (ice_percent BETWEEN 0 AND 100)
 );
 
 CREATE TABLE IF NOT EXISTS order_item_toppings (
@@ -73,3 +75,8 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_shifts_user_id ON shifts(user_id);
+
+
+-- Safe migration for existing Render/PostgreSQL databases.
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS sugar_percent INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS ice_percent INTEGER NOT NULL DEFAULT 100;

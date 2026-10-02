@@ -14,15 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
-
-// Cấu hình lại Pool để nhận dạng môi trường Render chính xác hơn
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('render.com') 
-    ? { rejectUnauthorized: false } 
-    : (process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false)
-});
-
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024 } });
 
 app.use(express.json({ limit: '1mb' }));
@@ -32,7 +24,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const q = (text, params=[]) => pool.query(text, params);
 
 async function initDb() {
-  const schema = fs.readFileSync(path.join(__dirname, 'db', 'schema.sql'), 'utf8');
+  const schema = fs.readFileSync(path.join(__dirname, 'db/schema.sql'), 'utf8');
   await q(schema);
   const count = await q('SELECT COUNT(*)::int AS n FROM users');
   if (count.rows[0].n === 0) {
@@ -89,14 +81,6 @@ app.get('/api/menu',auth,async(req,res)=>{ const r=await q('SELECT id,name,categ
 app.get('/api/toppings',auth,async(req,res)=>{ const r=await q('SELECT id,name,price FROM toppings WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/settings/qr',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='payment_qr'"); res.json({image:r.rows[0]?.value||''}); });
 
-app.post('/api/shifts/clock-in',auth,async(req,res)=>{
-  const active=await q('SELECT id FROM shifts WHERE user_id=$1 AND clock_out IS NULL',[req.user.id]);
-  if(active.rowCount) return res.json({id:active.rows[0].id});
-  const r=await q('INSERT INTO shifts(user_id) VALUES($1) RETURNING id,clock_in',[req.user.id]); res.json(r.rows[0]);
-});
-app.post('/api/shifts/clock-out',auth,async(req,res)=>{ const r=await q('UPDATE shifts SET clock_out=NOW() WHERE user_id=$1 AND clock_out IS NULL RETURNING *',[req.user.id]); if(!r.rowCount)return res.status(400).json({message:'Không có ca đang mở'}); res.json(r.rows[0]); });
-app.get('/api/shifts/current',auth,async(req,res)=>{ const r=await q('SELECT * FROM shifts WHERE user_id=$1 AND clock_out IS NULL ORDER BY id DESC LIMIT 1',[req.user.id]); res.json(r.rows[0]||null); });
-
 app.post('/api/orders',auth,async(req,res)=>{
   const {items,paymentMethod,discount=0}=req.body;
   if(!Array.isArray(items)||!items.length) return res.status(400).json({message:'Giỏ hàng trống'});
@@ -104,8 +88,7 @@ app.post('/api/orders',auth,async(req,res)=>{
   const client=await pool.connect();
   try{
     await client.query('BEGIN');
-    const shift=await client.query('SELECT id FROM shifts WHERE user_id=$1 AND clock_out IS NULL ORDER BY id DESC LIMIT 1',[req.user.id]);
-    const shiftId=shift.rows[0]?.id||null;
+    const shiftId = null;
     let subtotal=0;
     const normalized=[];
     for(const item of items){
@@ -117,13 +100,13 @@ app.post('/api/orders',auth,async(req,res)=>{
         const tr=await client.query('SELECT id,name,price FROM toppings WHERE id=$1 AND active=true',[t.id]);
         if(tr.rowCount){ const tq=Math.max(1,Number(t.quantity)||1); topTotal += Number(tr.rows[0].price)*tq; tops.push({...tr.rows[0],quantity:tq}); }
       }
-      const line=(Number(m.price)+topTotal)*qty; subtotal+=line; normalized.push({m,qty,tops,line});
+      const line=(Number(m.price)+topTotal)*qty; subtotal+=line; normalized.push({m,qty,tops,line,sugarPercent:Math.min(100,Math.max(0,money(item.sugarPercent ?? 100))),icePercent:Math.min(100,Math.max(0,money(item.icePercent ?? 100)))});
     }
     const disc=Math.min(subtotal,Math.max(0,money(discount)));
     const total=subtotal-disc;
     const order=await client.query(`INSERT INTO orders(user_id,shift_id,payment_method,subtotal,discount,total,status) VALUES($1,$2,$3,$4,$5,$6,'paid') RETURNING *`,[req.user.id,shiftId,paymentMethod,subtotal,disc,total]);
     for(const x of normalized){
-      const oi=await client.query(`INSERT INTO order_items(order_id,menu_item_id,item_name,unit_price,quantity,line_total) VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,[order.rows[0].id,x.m.id,x.m.name,x.m.price,x.qty,x.line]);
+      const oi=await client.query(`INSERT INTO order_items(order_id,menu_item_id,item_name,unit_price,quantity,line_total,sugar_percent,ice_percent) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[order.rows[0].id,x.m.id,x.m.name,x.m.price,x.qty,x.line,x.sugarPercent,x.icePercent]);
       for(const t of x.tops) await client.query(`INSERT INTO order_item_toppings(order_item_id,topping_id,topping_name,topping_price,quantity) VALUES($1,$2,$3,$4,$5)`,[oi.rows[0].id,t.id,t.name,t.price,t.quantity]);
     }
     await client.query('COMMIT');
@@ -167,8 +150,6 @@ app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
   const byDay=await q(`SELECT TO_CHAR(created_at,'YYYY-MM-DD') day,COUNT(*)::int orders,COALESCE(SUM(total),0)::int revenue FROM orders WHERE created_at BETWEEN $1 AND $2 AND status='paid' GROUP BY 1 ORDER BY 1`,[start,end]);
   res.json({summary:total.rows[0],byStaff:byStaff.rows,byDay:byDay.rows});
 });
-app.get('/api/admin/reports/shifts',auth,adminOnly,async(req,res)=>{const {from,to}=req.query;const start=from?`${from} 00:00:00`:'2000-01-01';const end=to?`${to} 23:59:59`:'2100-01-01';const r=await q(`SELECT s.id,s.clock_in,s.clock_out,u.full_name AS "fullName",COUNT(o.id)::int orders,COALESCE(SUM(o.total),0)::int revenue FROM shifts s JOIN users u ON u.id=s.user_id LEFT JOIN orders o ON o.shift_id=s.id AND o.status='paid' WHERE s.clock_in BETWEEN $1 AND $2 GROUP BY s.id,u.full_name ORDER BY s.clock_in DESC`,[start,end]);res.json(r.rows);});
-
 app.get(/.*/,(req,res)=>res.sendFile(path.join(__dirname,'public/index.html')));
 
 initDb().then(()=>app.listen(PORT,()=>console.log(`Mindset POS running on ${PORT}`))).catch(err=>{console.error(err);process.exit(1)});
