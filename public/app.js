@@ -204,7 +204,7 @@ function productOptionsHtml(itemIndex = 'new', existing = {}) {
         const q = (existing.toppings || []).find(z => z.id === t.id)?.quantity || 0;
         return `<div class="topping">
           <div><strong>${esc(t.name)}</strong><br><small>${money(t.price)}</small></div>
-          <div class="qty"><button type="button" onclick='adjustTopModal(${JSON.stringify(String(itemIndex))},${Number(t.id)},-1)'>−</button><b id="top-q-${String(itemIndex)}-${t.id}">${q}</b><button type="button" onclick='adjustTopModal(${JSON.stringify(String(itemIndex))},${Number(t.id)},1)'>+</button></div>
+          <div class="qty"><button type="button" class="top-adjust-btn" data-top-index="${esc(String(itemIndex))}" data-top-id="${Number(t.id)}" data-top-delta="-1">−</button><b id="top-q-${String(itemIndex)}-${t.id}">${q}</b><button type="button" class="top-adjust-btn" data-top-index="${esc(String(itemIndex))}" data-top-id="${Number(t.id)}" data-top-delta="1">+</button></div>
         </div>`;
       }).join('') || '<div class="empty">Chưa có topping</div>'}
     </div>`;
@@ -284,16 +284,23 @@ function editCartItem(i) {
 
 function adjustTopModal(index, id, d) {
   const draf = window.__productDraft;
-  const t = state.toppings.find(z => z.id === id);
-  if (!draf || !t) return;
-  let z = draf.toppings.find(z => z.id === id);
-  if (!z && d > 0) { z = { id:t.id, name:t.name, price:Number(t.price), quantity:0 }; draf.toppings.push(z); }
-  if (z) {
-    z.quantity = Math.max(0, z.quantity + d);
-    if (z.quantity === 0) draf.toppings = draf.toppings.filter(a => a.id !== id);
+  const numericId = Number(id);
+  const delta = Number(d);
+  const t = state.toppings.find(z => Number(z.id) === numericId);
+  if (!draf || !t || !Number.isFinite(delta)) return;
+
+  let z = draf.toppings.find(z => Number(z.id) === numericId);
+  if (!z && delta > 0) {
+    z = { id: numericId, name: t.name, price: Number(t.price), quantity: 0 };
+    draf.toppings.push(z);
   }
-  const q = draf.toppings.find(z => z.id === id)?.quantity || 0;
-  const node = document.querySelector(`#top-q-${index}-${id}`);
+  if (z) {
+    z.quantity = Math.max(0, Number(z.quantity || 0) + delta);
+    if (z.quantity === 0) draf.toppings = draf.toppings.filter(a => Number(a.id) !== numericId);
+  }
+
+  const q = draf.toppings.find(z => Number(z.id) === numericId)?.quantity || 0;
+  const node = document.getElementById(`top-q-${String(index)}-${numericId}`);
   if (node) node.textContent = q;
 }
 
@@ -659,7 +666,19 @@ window.showReportMode = showReportMode;
 window.loadReportDay = loadReportDay;
 window.loadReportMonth = loadReportMonth;
 
-function openModal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.remove('hidden'); }
+function openModal(html) {
+  const box = $('#modalBox');
+  box.innerHTML = html;
+  // Dùng event delegation cho nút +/- topping để hoạt động ổn định cả khi mở món mới
+  // và khi bấm "Tùy chỉnh" một món đã có trong đơn.
+  box.onclick = (e) => {
+    const btn = e.target.closest('.top-adjust-btn');
+    if (!btn || !box.contains(btn)) return;
+    e.preventDefault();
+    adjustTopModal(btn.dataset.topIndex, Number(btn.dataset.topId), Number(btn.dataset.topDelta));
+  };
+  $('#modal').classList.remove('hidden');
+}
 function closeModal() { $('#modal').classList.add('hidden'); window.__productDraft = null; window.__editIndex = null; }
 window.closeModal = closeModal;
 
