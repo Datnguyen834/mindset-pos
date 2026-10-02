@@ -159,7 +159,7 @@ app.get('/api/admin/orders/staff',auth,adminOnly,async(req,res)=>{
       COALESCE(SUM(CASE WHEN o.payment_method='transfer' THEN o.total ELSE 0 END),0)::int AS transfer
     FROM users u
     LEFT JOIN orders o ON o.user_id=u.id AND o.status='paid' AND o.created_at BETWEEN $1 AND $2
-    WHERE u.role='staff'
+    WHERE u.role IN ('staff','admin')
     GROUP BY u.id,u.full_name ORDER BY u.full_name`,[start,end]);
   const total=await q(`SELECT COUNT(*)::int orders,COALESCE(SUM(total),0)::int revenue,
       COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END),0)::int cash,
@@ -171,7 +171,7 @@ app.get('/api/admin/orders/staff',auth,adminOnly,async(req,res)=>{
 app.get('/api/admin/orders/staff/:id',auth,adminOnly,async(req,res)=>{
   const {from,to,payment='',product=''}=req.query;
   const {start,end}=reportBounds(from,to);
-  const staff=await q(`SELECT id,full_name AS "fullName" FROM users WHERE id=$1 AND role='staff'`,[req.params.id]);
+  const staff=await q(`SELECT id,full_name AS "fullName" FROM users WHERE id=$1 AND role IN ('staff','admin')`,[req.params.id]);
   if(!staff.rowCount) return res.status(404).json({message:'Không tìm thấy nhân viên'});
   const params=[req.params.id,start,end];
   const conditions=[`o.user_id=$1`,`o.status='paid'`,`o.created_at BETWEEN $2 AND $3`];
