@@ -39,7 +39,7 @@ function nav() {
   const admin = state.user.role === 'admin';
   const items = admin
     ? [['pos','☕','Gọi món'],['orders','▣','Đơn hàng'],['reports','▥','Doanh thu'],['users','♙','Quản lý nhân viên'],['settings','⚙','Cài đặt']]
-    : [['pos','☕','Gọi món'],['orders','▣','Đơn hàng']];
+    : [['pos','☕','Gọi món']];
   $('#nav').innerHTML = items.map(([p, icon, label]) =>
     `<button class="nav-item ${state.page === p ? 'active' : ''}" onclick="go('${p}')"><span class="nav-icon">${icon}</span><span>${label}</span></button>`
   ).join('');
@@ -85,7 +85,7 @@ function renderPOS() {
   $('#page').innerHTML = `
     <div class="content pos-content">
       <div class="page-title compact-title">
-        <div><h1>Gọi món</h1><p>Chạm vào món để chọn topping, % đường và % đá.</p></div>
+        <div><h1>Gọi món</h1></div>
       </div>
       <div class="pos-layout">
         <section class="menu-panel">
@@ -299,8 +299,9 @@ async function completePayment(method) {
     });
     state.cart = [];
     closeModal();
+    renderPOS();
+    openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.orderId}</b> · Tổng tiền <b class="modal-total">${money(d.total)}</b></p><p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.orderId})">In bill</button></div>`);
     toast(`Đã thanh toán #${d.orderId} — ${money(d.total)}`);
-    go('orders');
   } catch (e) { toast(e.message, true); }
 }
 
