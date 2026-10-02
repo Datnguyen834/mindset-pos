@@ -403,3 +403,19 @@ body.modal-open { overflow: hidden; }
 .category-actions .category-chips{display:contents}
 .category-add-btn{white-space:nowrap}
 .menu-section-head{margin-top:4px;margin-bottom:12px}
+
+/* Doanh thu: chỉ cuộn danh sách nhân viên, tổng luôn cố định phía dưới */
+#page.revenue-page{height:calc(100vh - 78px);min-height:0;overflow:hidden}
+.revenue-page.content{min-height:0;height:100%;overflow:hidden}
+.revenue-page .revenue-filter-bar{flex:0 0 auto}
+.revenue-page #staffOrdersArea{min-height:0;flex:1;display:flex;flex-direction:column;overflow:hidden}
+.revenue-page .revenue-heading{flex:0 0 auto}
+.revenue-page .staff-revenue-scroll{min-height:0;flex:1;overflow-y:auto;overflow-x:hidden;padding:0 5px 10px 1px}
+.revenue-page .staff-revenue-grid{padding-bottom:2px}
+.revenue-page .revenue-total-card{flex:0 0 auto;margin-top:10px;margin-bottom:0}
+@media(max-width:900px){
+  #page.revenue-page{height:auto;min-height:calc(100vh - 68px);overflow:visible}
+  .revenue-page.content{height:auto;min-height:calc(100vh - 68px);overflow:visible}
+  .revenue-page #staffOrdersArea{overflow:visible}
+  .revenue-page .staff-revenue-scroll{overflow:visible;flex:none}
+}
