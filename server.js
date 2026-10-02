@@ -14,7 +14,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false });
+
+// Cấu hình lại Pool để nhận dạng môi trường Render chính xác hơn
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('render.com') 
+    ? { rejectUnauthorized: false } 
+    : (process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false)
+});
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024 } });
 
 app.use(express.json({ limit: '1mb' }));
@@ -24,7 +32,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const q = (text, params=[]) => pool.query(text, params);
 
 async function initDb() {
-  const schema = fs.readFileSync(path.join(__dirname, 'db/schema.sql'), 'utf8');
+  const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   await q(schema);
   const count = await q('SELECT COUNT(*)::int AS n FROM users');
   if (count.rows[0].n === 0) {
