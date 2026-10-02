@@ -28,7 +28,7 @@ async function initDb() {
   await q(schema);
   const count = await q('SELECT COUNT(*)::int AS n FROM users');
   if (count.rows[0].n === 0) {
-    const a = await bcrypt.hash('admin123', 10);
+    const a = await bcrypt.hash('admin@123', 10);
     const s = await bcrypt.hash('123456', 10);
     await q(`INSERT INTO users(username,password_hash,full_name,role) VALUES ($1,$2,$3,'admin'),($4,$5,$6,'staff')`, ['admin',a,'Quản trị viên','nhanvien',s,'Đạt']);
   }
