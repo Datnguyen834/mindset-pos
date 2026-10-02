@@ -204,7 +204,7 @@ function productOptionsHtml(itemIndex = 'new', existing = {}) {
         const q = (existing.toppings || []).find(z => z.id === t.id)?.quantity || 0;
         return `<div class="topping">
           <div><strong>${esc(t.name)}</strong><br><small>${money(t.price)}</small></div>
-          <div class="qty"><button onclick="adjustTopModal(${itemIndex},${t.id},-1)">−</button><b id="top-q-${itemIndex}-${t.id}">${q}</b><button onclick="adjustTopModal(${itemIndex},${t.id},1)">+</button></div>
+          <div class="qty"><button onclick="adjustTopModal(${JSON.stringify(itemIndex)},${t.id},-1)">−</button><b id="top-q-${itemIndex}-${t.id}">${q}</b><button onclick="adjustTopModal(${JSON.stringify(itemIndex)},${t.id},1)">+</button></div>
         </div>`;
       }).join('') || '<div class="empty">Chưa có topping</div>'}
     </div>`;
