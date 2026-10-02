@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mindset POS</title>
+  <link rel="icon" href="/assets/logo.png" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="toast"></div>
+  <section id="loginView" class="login-page">
+    <div class="login-art">
+      <div class="brand"><img src="/assets/logo.png"/><div><b>Mindset</b><span>GOOD COFFEE • BETTER MINDSET</span></div></div>
+      <div class="login-copy"><p>Một ly cà phê</p><h1>cho những ý tưởng lớn!</h1></div>
+    </div>
+    <div class="login-card">
+      <div class="mobile-logo"><img src="/assets/logo.png"/></div>
+      <div class="eyebrow">MINDSET CAFE</div><h2>Đăng nhập</h2><p class="muted">Đăng nhập để bắt đầu ca làm việc</p>
+      <form id="loginForm">
+        <label>Tài khoản<input id="loginUser" autocomplete="username" placeholder="Nhập tài khoản" required></label>
+        <label>Mật khẩu<div class="password-wrap"><input id="loginPass" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu" required><button type="button" id="togglePass">Hiện</button></div></label>
+        <button class="primary full" type="submit">Đăng nhập</button>
+      </form>
+      <div class="demo-box"><b>Tài khoản demo</b><br>Admin: <code>admin / admin123</code><br>Nhân viên: <code>nhanvien / 123456</code></div>
+    </div>
+  </section>
+
+  <section id="appView" class="app hidden">
+    <aside class="sidebar">
+      <div class="side-brand"><img src="/assets/logo.png"><div><b>Mindset</b><span>GOOD COFFEE • BETTER MINDSET</span></div></div>
+      <nav id="nav"></nav>
+      <div class="side-quote">Một ly cà phê<br><em>cho những ý tưởng lớn!</em></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div><div class="welcome">Nhân viên: <b id="userName">-</b></div><small id="clock"></small></div><div class="top-actions"><span class="role-badge" id="roleBadge"></span><button class="icon-btn" onclick="logout()">↪</button><button class="logout" onclick="logout()">Đăng xuất</button></div></header>
+      <div id="page"></div>
+    </main>
+  </section>
+
+  <div id="modal" class="modal hidden"><div class="modal-box" id="modalBox"></div></div>
+  <script src="/app.js"></script>
+</body>
+</html>
