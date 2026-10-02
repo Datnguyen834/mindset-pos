@@ -89,3 +89,9 @@ CREATE INDEX IF NOT EXISTS idx_shifts_user_id ON shifts(user_id);
 -- Safe migration for existing Render/PostgreSQL databases.
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS sugar_percent INTEGER NOT NULL DEFAULT 100;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS ice_percent INTEGER NOT NULL DEFAULT 100;
+
+-- Hard-delete users while preserving historical orders. Deleted users leave their
+-- orders in the database with a NULL user_id instead of blocking account deletion.
+ALTER TABLE orders ALTER COLUMN user_id DROP NOT NULL;
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_user_id_fkey;
+ALTER TABLE orders ADD CONSTRAINT orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;

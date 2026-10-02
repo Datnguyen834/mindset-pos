@@ -484,7 +484,7 @@ async function printOrder(id) {
 async function renderUsers() {
   const users = await api('/api/admin/users');
   state.userList = users;
-  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Quản lý nhân viên</h1><p>Tạo tài khoản, đổi mật khẩu và phân quyền.</p></div><button class="btn primary" onclick="userForm()">+ Thêm tài khoản</button></div><div class="table-card"><table class="data-table"><thead><tr><th>Tài khoản</th><th>Họ tên</th><th>Quyền</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>${users.map(u => `<tr><td>${esc(u.username)}</td><td>${esc(u.fullName)}</td><td><b>${u.role === 'admin' ? 'Admin' : 'Nhân viên'}</b></td><td>${u.active ? 'Đang hoạt động' : 'Đã khóa'}</td><td><button class="btn small" onclick='userForm(${JSON.stringify(u)})'>Sửa</button> <button class="btn small danger" onclick="deleteUser(${u.id})">Khóa</button></td></tr>`).join('')}</tbody></table></div></div>`;
+  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Quản lý nhân viên</h1><p>Tạo tài khoản, đổi mật khẩu và phân quyền.</p></div><button class="btn primary" onclick="userForm()">+ Thêm tài khoản</button></div><div class="table-card"><table class="data-table"><thead><tr><th>Tài khoản</th><th>Họ tên</th><th>Quyền</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>${users.map(u => `<tr><td>${esc(u.username)}</td><td>${esc(u.fullName)}</td><td><b>${u.role === 'admin' ? 'Admin' : 'Nhân viên'}</b></td><td>${u.active ? 'Đang hoạt động' : 'Đã khóa'}</td><td>${u.role === 'admin' ? '<span class="muted">Bảo vệ</span>' : `<button class="btn small" onclick='userForm(${JSON.stringify(u)})'>Sửa</button> <button class="btn small danger" onclick="deleteUser(${u.id})">Xóa</button>`}</td></tr>`).join('')}</tbody></table></div></div>`;
 }
 
 function userForm(u = {}) {
@@ -503,13 +503,14 @@ async function saveUser(id) {
 
 async function deleteUser(id) {
   const u = state.userList?.find(x => x.id === id);
+  if (!u) { toast('Không tìm thấy tài khoản', true); return; }
   confirmDelete({
-    title: 'Khóa tài khoản?',
-    message: 'Bạn có chắc muốn khóa tài khoản',
-    item: u?.username ? u.username + '?' : 'này?',
+    title: 'Xóa tài khoản?',
+    message: 'Bạn có chắc muốn xóa hẳn tài khoản',
+    item: u.username + '?',
     onConfirm: async () => {
       await api('/api/admin/users/' + id, {method:'DELETE'});
-      toast('Đã khóa tài khoản');
+      toast('Đã xóa tài khoản');
       await renderUsers();
     }
   });
