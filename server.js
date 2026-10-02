@@ -141,76 +141,19 @@ app.get('/api/admin/reports/recent-orders',auth,adminOnly,async(req,res)=>{
   res.json({orders:r.rows});
 });
 
-function reportBounds(from, to) {
-  const today = new Date().toISOString().slice(0,10);
-  return {
-    start: from ? `${from} 00:00:00` : `${today} 00:00:00`,
-    end: to ? `${to} 23:59:59` : `${today} 23:59:59`
-  };
-}
-
 app.get('/api/admin/orders/staff',auth,adminOnly,async(req,res)=>{
-  const {from,to}=req.query;
-  const {start,end}=reportBounds(from,to);
-  const r=await q(`SELECT u.id,u.full_name AS "fullName",
-      COUNT(o.id)::int AS orders,
-      COALESCE(SUM(o.total),0)::int AS revenue,
-      COALESCE(SUM(CASE WHEN o.payment_method='cash' THEN o.total ELSE 0 END),0)::int AS cash,
-      COALESCE(SUM(CASE WHEN o.payment_method='transfer' THEN o.total ELSE 0 END),0)::int AS transfer
-    FROM users u
-    LEFT JOIN orders o ON o.user_id=u.id AND o.status='paid' AND o.created_at BETWEEN $1 AND $2
+  const r=await q(`SELECT u.id,u.full_name AS "fullName",COUNT(o.id)::int AS orders,COALESCE(SUM(o.total),0)::int AS revenue
+    FROM users u LEFT JOIN orders o ON o.user_id=u.id AND o.status='paid'
     WHERE u.role='staff'
-    GROUP BY u.id,u.full_name ORDER BY u.full_name`,[start,end]);
-  const total=await q(`SELECT COUNT(*)::int orders,COALESCE(SUM(total),0)::int revenue,
-      COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END),0)::int cash,
-      COALESCE(SUM(CASE WHEN payment_method='transfer' THEN total ELSE 0 END),0)::int transfer
-    FROM orders WHERE status='paid' AND created_at BETWEEN $1 AND $2`,[start,end]);
-  res.json({staff:r.rows,total:total.rows[0]});
+    GROUP BY u.id,u.full_name ORDER BY u.full_name`);
+  res.json({staff:r.rows});
 });
 
 app.get('/api/admin/orders/staff/:id',auth,adminOnly,async(req,res)=>{
-  const {from,to,payment='',product=''}=req.query;
-  const {start,end}=reportBounds(from,to);
   const staff=await q(`SELECT id,full_name AS "fullName" FROM users WHERE id=$1 AND role='staff'`,[req.params.id]);
   if(!staff.rowCount) return res.status(404).json({message:'Không tìm thấy nhân viên'});
-  const params=[req.params.id,start,end];
-  const conditions=[`o.user_id=$1`,`o.status='paid'`,`o.created_at BETWEEN $2 AND $3`];
-  if(payment){params.push(payment);conditions.push(`o.payment_method=$${params.length}`);}
-  if(product){params.push(`%${product}%`);conditions.push(`EXISTS (SELECT 1 FROM order_items op WHERE op.order_id=o.id AND op.item_name ILIKE $${params.length})`);}
-  const where=conditions.join(' AND ');
-  const r=await q(`SELECT o.id,o.created_at,o.payment_method,o.total,
-      COALESCE(STRING_AGG(DISTINCT oi.item_name,' · ' ORDER BY oi.item_name),'') AS products
-    FROM orders o LEFT JOIN order_items oi ON oi.order_id=o.id
-    WHERE ${where}
-    GROUP BY o.id,o.created_at,o.payment_method,o.total
-    ORDER BY o.created_at DESC,o.id DESC`,params);
-  const sum=await q(`SELECT COUNT(*)::int orders,COALESCE(SUM(o.total),0)::int total,
-      COALESCE(SUM(CASE WHEN o.payment_method='cash' THEN o.total ELSE 0 END),0)::int cash,
-      COALESCE(SUM(CASE WHEN o.payment_method='transfer' THEN o.total ELSE 0 END),0)::int transfer
-    FROM orders o WHERE ${where}`,params);
-  res.json({staff:staff.rows[0],orders:r.rows,summary:sum.rows[0]});
-});
-
-app.get('/api/admin/orders/all',auth,adminOnly,async(req,res)=>{
-  const {from,to,payment='',product='',staffId=''}=req.query;
-  const {start,end}=reportBounds(from,to);
-  const params=[start,end];
-  const conditions=[`o.status='paid'`,`o.created_at BETWEEN $1 AND $2`];
-  if(payment){params.push(payment);conditions.push(`o.payment_method=$${params.length}`);}
-  if(product){params.push(`%${product}%`);conditions.push(`EXISTS (SELECT 1 FROM order_items op WHERE op.order_id=o.id AND op.item_name ILIKE $${params.length})`);}
-  if(staffId){params.push(Number(staffId));conditions.push(`o.user_id=$${params.length}`);}
-  const where=conditions.join(' AND ');
-  const r=await q(`SELECT o.id,o.created_at,o.payment_method,o.total,u.full_name AS "fullName",
-      COALESCE(STRING_AGG(DISTINCT oi.item_name,' · ' ORDER BY oi.item_name),'') AS products
-    FROM orders o JOIN users u ON u.id=o.user_id LEFT JOIN order_items oi ON oi.order_id=o.id
-    WHERE ${where}
-    GROUP BY o.id,o.created_at,o.payment_method,o.total,u.full_name
-    ORDER BY o.created_at DESC,o.id DESC`,params);
-  const sum=await q(`SELECT COUNT(*)::int orders,COALESCE(SUM(o.total),0)::int total,
-      COALESCE(SUM(CASE WHEN o.payment_method='cash' THEN o.total ELSE 0 END),0)::int cash,
-      COALESCE(SUM(CASE WHEN o.payment_method='transfer' THEN o.total ELSE 0 END),0)::int transfer
-    FROM orders o WHERE ${where}`,params);
-  res.json({orders:r.rows,summary:sum.rows[0]});
+  const r=await q(`SELECT o.id,o.created_at,o.payment_method,o.total FROM orders o WHERE o.user_id=$1 AND o.status='paid' ORDER BY o.created_at DESC,o.id DESC`,[req.params.id]);
+  res.json({staff:staff.rows[0],orders:r.rows});
 });
 
 app.get('/api/orders/:id',auth,async(req,res)=>{
@@ -237,6 +180,19 @@ app.put('/api/admin/toppings/:id',auth,adminOnly,async(req,res)=>{const {name,pr
 app.delete('/api/admin/toppings/:id',auth,adminOnly,async(req,res)=>{await q('UPDATE toppings SET active=false WHERE id=$1',[req.params.id]);res.json({ok:true});});
 
 app.post('/api/admin/qr',auth,adminOnly,upload.single('qr'),async(req,res)=>{if(!req.file)return res.status(400).json({message:'Chưa chọn file'});const data=`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;await q("UPDATE settings SET value=$1 WHERE key='payment_qr'",[data]);res.json({image:data});});
+
+app.post('/api/admin/reports/reset',auth,adminOnly,async(req,res)=>{
+  const {from,to}=req.body || {};
+  if(!from || !to) return res.status(400).json({message:'Thiếu ngày cần reset'});
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return res.status(400).json({message:'Ngày không hợp lệ'});
+  if(from > to) return res.status(400).json({message:'Khoảng ngày không hợp lệ'});
+  try {
+    const r = await q(`UPDATE orders SET status='void' WHERE created_at >= $1::date AND created_at < ($2::date + INTERVAL '1 day') AND status='paid'`,[from,to]);
+    res.json({ok:true,affected:r.rowCount});
+  } catch(e) {
+    res.status(400).json({message:e.message || 'Không thể reset doanh thu'});
+  }
+});
 
 app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
   const {from,to}=req.query;

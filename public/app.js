@@ -75,7 +75,7 @@ function fmtDate(x) {
 function nav() {
   const admin = state.user.role === 'admin';
   const items = admin
-    ? [['pos','☕','Gọi món'],['orders','▣','Doanh thu'],['users','♙','Quản lý nhân viên'],['settings','⚙','Cài đặt']]
+    ? [['pos','☕','Gọi món'],['orders','▣','Đơn hàng'],['reports','▥','Doanh thu'],['users','♙','Quản lý nhân viên'],['settings','⚙','Cài đặt']]
     : [['pos','☕','Gọi món']];
   $('#nav').innerHTML = items.map(([p, icon, label]) =>
     `<button class="nav-item ${state.page === p ? 'active' : ''}" onclick="go('${p}')"><span class="nav-icon">${icon}</span><span>${label}</span></button>`
@@ -114,6 +114,7 @@ function renderPage() {
   $('#page').className = state.page === 'pos' ? 'pos-page' : '';
   if (state.page === 'pos') renderPOS();
   if (state.page === 'orders') renderOrders();
+  if (state.page === 'reports') renderReports();
   if (state.page === 'users') renderUsers();
   if (state.page === 'settings') renderSettings();
 }
@@ -344,136 +345,19 @@ async function completePayment(method) {
 }
 
 async function renderOrders() {
-  $('#page').innerHTML = `<div class="content revenue-page">
-    <div class="page-title">
-      <div><h1>Doanh thu</h1><p>Xem doanh thu theo ngày hoặc tháng, theo từng nhân viên và toàn bộ cửa hàng.</p></div>
-    </div>
-    <div class="revenue-filter-bar">
-      <div class="revenue-mode-tabs">
-        <button class="report-tab active" id="revDayTab" onclick="setRevenueMode('day')">Theo ngày</button>
-        <button class="report-tab" id="revMonthTab" onclick="setRevenueMode('month')">Theo tháng</button>
-      </div>
-      <div id="revenueDateControls"></div>
-    </div>
-    <div id="staffOrdersArea"><div class="empty">Đang tải doanh thu...</div></div>
-  </div>`;
-  setRevenueMode('day');
-}
-
-function setRevenueMode(mode) {
-  window.__revenueMode = mode;
-  $('#revDayTab')?.classList.toggle('active', mode === 'day');
-  $('#revMonthTab')?.classList.toggle('active', mode === 'month');
-  const now = new Date();
-  const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0,10);
-  const month = today.slice(0,7);
-  $('#revenueDateControls').innerHTML = mode === 'day'
-    ? `<div class="revenue-selector"><label>Chọn ngày<input id="revenueDate" type="date" value="${today}"></label><button class="btn primary" onclick="loadStaffRevenue()">Xem doanh thu</button></div>`
-    : `<div class="revenue-selector"><label>Chọn tháng<input id="revenueMonth" type="month" value="${month}"></label><button class="btn primary" onclick="loadStaffRevenue()">Xem doanh thu</button></div>`;
-  loadStaffRevenue();
-}
-
-function revenueRange() {
-  if (window.__revenueMode === 'month') {
-    const value = $('#revenueMonth')?.value;
-    if (!value) throw new Error('Hãy chọn tháng');
-    const [year, m] = value.split('-').map(Number);
-    const last = new Date(year, m, 0).getDate();
-    return {
-      from: `${year}-${String(m).padStart(2,'0')}-01`,
-      to: `${year}-${String(m).padStart(2,'0')}-${String(last).padStart(2,'0')}`,
-      label: `Tháng ${String(m).padStart(2,'0')}/${year}`
-    };
-  }
-  const date = $('#revenueDate')?.value;
-  if (!date) throw new Error('Hãy chọn ngày');
-  return { from: date, to: date, label: `Ngày ${date.split('-').reverse().join('/')}` };
-}
-
-async function loadStaffRevenue() {
-  try {
-    const range = revenueRange();
-    $('#staffOrdersArea').innerHTML = '<div class="empty">Đang tải doanh thu...</div>';
-    const d = await api(`/api/admin/orders/staff?from=${range.from}&to=${range.to}`);
-    const staff = d.staff || [];
-    const total = d.total || {orders:0,revenue:0,cash:0,transfer:0};
-    $('#staffOrdersArea').innerHTML = `
-      <div class="revenue-heading"><h2>${range.label}</h2><span>${total.orders} đơn hàng</span></div>
-      <div class="staff-revenue-grid">
-        ${staff.map(u => `
-          <button class="staff-revenue-card" onclick="showStaffOrders(${u.id}, '${esc(u.fullName).replace(/'/g, "\\'")}')">
-            <div class="staff-revenue-top"><div class="staff-order-icon">♙</div><div class="staff-revenue-name"><strong>${esc(u.fullName)}</strong><span>${u.orders} đơn</span></div><span class="staff-order-arrow">›</span></div>
-            <div class="staff-revenue-total">${money(u.revenue)}</div>
-            <div class="staff-revenue-split"><span><small>💵 Tiền mặt</small><b>${money(u.cash)}</b></span><span><small>▣ Chuyển khoản</small><b>${money(u.transfer)}</b></span></div>
-          </button>`).join('') || '<div class="empty">Chưa có nhân viên phát sinh đơn trong khoảng thời gian này</div>'}
-      </div>
-      <button class="revenue-total-card" type="button" onclick="showAllOrders()">
-        <div><strong>TỔNG TẤT CẢ NHÂN VIÊN</strong><span>${total.orders} đơn · Bấm để xem toàn bộ đơn hàng</span></div>
-        <div class="revenue-total-money">${money(total.revenue)}</div>
-        <div class="revenue-total-split"><span>💵 ${money(total.cash)}</span><span>▣ ${money(total.transfer)}</span></div>
-      </button>`;
-  } catch (e) {
-    $('#staffOrdersArea').innerHTML = `<div class="empty error-empty">${esc(e.message || 'Không tải được doanh thu')}</div>`;
-  }
+  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Đơn hàng</h1><p>Chọn nhân viên để xem các đơn hàng nhân viên đó đã bán.</p></div></div><div id="staffOrdersArea"><div class="empty">Đang tải danh sách nhân viên...</div></div></div>`;
+  const list = await api('/api/admin/orders/staff').catch(() => ({staff:[]}));
+  const staff = list.staff || [];
+  $('#staffOrdersArea').innerHTML = staff.length ? `<div class="staff-order-grid">${staff.map(u => `<button class="staff-order-card" onclick="showStaffOrders(${u.id}, '${esc(u.fullName).replace(/'/g, "\\'")}')"><div class="staff-order-icon">♙</div><div class="staff-order-info"><strong>${esc(u.fullName)}</strong><span>${u.orders} đơn · ${money(u.revenue)}</span></div><span class="staff-order-arrow">›</span></button>`).join('')}</div>` : '<div class="empty">Chưa có nhân viên phát sinh đơn hàng</div>';
 }
 
 async function showStaffOrders(staffId, staffName) {
-  const range = revenueRange();
-  $('#staffOrdersArea').innerHTML = `<div class="page-title compact-title detail-title"><div><h2 style="margin:0">Đơn hàng của ${esc(staffName)}</h2><p>Lọc lại đơn theo ngày, phương thức thanh toán hoặc sản phẩm.</p></div><button class="btn" onclick="loadStaffRevenue()">← Danh sách nhân viên</button></div>
-    <div class="order-filter-panel">
-      <label>Ngày từ<input id="staffFrom" type="date" value="${range.from}"></label>
-      <label>Đến ngày<input id="staffTo" type="date" value="${range.to}"></label>
-      <label>Thanh toán<select id="staffPayment"><option value="">Tất cả</option><option value="cash">Tiền mặt</option><option value="transfer">Chuyển khoản</option></select></label>
-      <label class="product-filter">Sản phẩm<input id="staffProduct" placeholder="Ví dụ: Latte"></label>
-      <button class="btn primary" onclick="loadStaffOrderDetail(${staffId}, '${esc(staffName).replace(/'/g, "\\'")}')">Tìm đơn hàng</button>
-    </div>
-    <div class="panel order-detail-panel"><div id="staffOrderSummary" class="order-detail-summary"></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Mã</th><th>Thời gian</th><th>Sản phẩm</th><th>Thanh toán</th><th>Tổng</th><th></th></tr></thead><tbody id="ordersBody"><tr><td colspan="6">Đang tải...</td></tr></tbody></table></div></div>`;
-  await loadStaffOrderDetail(staffId, staffName);
+  $('#staffOrdersArea').innerHTML = `<div class="page-title compact-title"><div><h2 style="margin:0">Đơn hàng của ${esc(staffName)}</h2><p>Danh sách các đơn hàng nhân viên này đã bán.</p></div><button class="btn" onclick="renderOrders()">← Danh sách nhân viên</button></div><div class="panel"><table class="data-table"><thead><tr><th>Mã</th><th>Thời gian</th><th>Thanh toán</th><th>Tổng</th><th></th></tr></thead><tbody id="ordersBody"><tr><td colspan="5">Đang tải...</td></tr></tbody></table></div>`;
+  const list = await api('/api/admin/orders/staff/' + staffId).catch(() => ({orders:[]}));
+  $('#ordersBody').innerHTML = (list.orders || []).map(o => `<tr><td>#${o.id}</td><td>${fmtDate(o.created_at)}</td><td>${o.payment_method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản'}</td><td><b>${money(o.total)}</b></td><td><button class="btn small" onclick="printOrder(${o.id})">In hóa đơn</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Nhân viên này chưa có đơn hàng</td></tr>';
 }
+window.showStaffOrders = showStaffOrders;
 
-async function loadStaffOrderDetail(staffId, staffName) {
-  try {
-    const from = $('#staffFrom')?.value || '';
-    const to = $('#staffTo')?.value || '';
-    const payment = $('#staffPayment')?.value || '';
-    const product = $('#staffProduct')?.value?.trim() || '';
-    const qs = new URLSearchParams({from,to,payment,product});
-    const list = await api(`/api/admin/orders/staff/${staffId}?${qs.toString()}`);
-    const orders = list.orders || [];
-    const s = list.summary || {orders:0,total:0,cash:0,transfer:0};
-    $('#staffOrderSummary').innerHTML = `<span><b>${s.orders}</b> đơn</span><span>Tổng <b>${money(s.total)}</b></span><span>💵 <b>${money(s.cash)}</b></span><span>▣ <b>${money(s.transfer)}</b></span>`;
-    $('#ordersBody').innerHTML = orders.map(o => `<tr><td>#${o.id}</td><td>${fmtDate(o.created_at)}</td><td><strong>${esc(o.products || '—')}</strong></td><td>${o.payment_method === 'cash' ? 'Tiền mặt' : 'Chuyển khoản'}</td><td><b>${money(o.total)}</b></td><td><button class="btn small" onclick="printOrder(${o.id})">Xem đơn</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty">Không tìm thấy đơn phù hợp</td></tr>';
-  } catch (e) {
-    $('#ordersBody').innerHTML = `<tr><td colspan="6" class="empty error-empty">${esc(e.message || 'Không tải được đơn hàng')}</td></tr>`;
-  }
-}
-
-async function showAllOrders() {
-  const range = revenueRange();
-  $('#staffOrdersArea').innerHTML = `<div class="page-title compact-title detail-title"><div><h2 style="margin:0">Tất cả đơn hàng</h2><p>Lọc toàn bộ đơn của tất cả nhân viên.</p></div><button class="btn" onclick="loadStaffRevenue()">← Doanh thu</button></div>
-    <div class="order-filter-panel"><label>Ngày từ<input id="staffFrom" type="date" value="${range.from}"></label><label>Đến ngày<input id="staffTo" type="date" value="${range.to}"></label><label>Nhân viên<select id="allStaffFilter"><option value="">Tất cả</option></select></label><label>Thanh toán<select id="staffPayment"><option value="">Tất cả</option><option value="cash">Tiền mặt</option><option value="transfer">Chuyển khoản</option></select></label><label class="product-filter">Sản phẩm<input id="staffProduct" placeholder="Tên sản phẩm"></label><button class="btn primary" onclick="loadAllOrders()">Tìm đơn hàng</button></div>
-    <div class="panel order-detail-panel"><div id="staffOrderSummary" class="order-detail-summary"></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Mã</th><th>Thời gian</th><th>Nhân viên</th><th>Sản phẩm</th><th>Thanh toán</th><th>Tổng</th><th></th></tr></thead><tbody id="ordersBody"><tr><td colspan="7">Đang tải...</td></tr></tbody></table></div></div>`;
-  const list = await api(`/api/admin/orders/staff?from=${range.from}&to=${range.to}`);
-  $('#allStaffFilter').innerHTML = '<option value="">Tất cả</option>' + (list.staff || []).map(u => `<option value="${u.id}">${esc(u.fullName)}</option>`).join('');
-  await loadAllOrders();
-}
-
-async function loadAllOrders() {
-  try {
-    const from=$('#staffFrom')?.value||'', to=$('#staffTo')?.value||'', payment=$('#staffPayment')?.value||'', product=$('#staffProduct')?.value?.trim()||'', staffId=$('#allStaffFilter')?.value||'';
-    const qs=new URLSearchParams({from,to,payment,product,staffId});
-    const d=await api(`/api/admin/orders/all?${qs.toString()}`);
-    const s=d.summary||{orders:0,total:0,cash:0,transfer:0};
-    $('#staffOrderSummary').innerHTML=`<span><b>${s.orders}</b> đơn</span><span>Tổng <b>${money(s.total)}</b></span><span>💵 <b>${money(s.cash)}</b></span><span>▣ <b>${money(s.transfer)}</b></span>`;
-    $('#ordersBody').innerHTML=(d.orders||[]).map(o=>`<tr><td>#${o.id}</td><td>${fmtDate(o.created_at)}</td><td>${esc(o.fullName)}</td><td><strong>${esc(o.products||'—')}</strong></td><td>${o.payment_method==='cash'?'Tiền mặt':'Chuyển khoản'}</td><td><b>${money(o.total)}</b></td><td><button class="btn small" onclick="printOrder(${o.id})">Xem đơn</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">Không tìm thấy đơn phù hợp</td></tr>';
-  } catch(e) { $('#ordersBody').innerHTML=`<tr><td colspan="7" class="empty error-empty">${esc(e.message||'Không tải được đơn hàng')}</td></tr>`; }
-}
-window.showStaffOrders=showStaffOrders;
-window.loadStaffOrderDetail=loadStaffOrderDetail;
-window.showAllOrders=showAllOrders;
-window.loadAllOrders=loadAllOrders;
-window.setRevenueMode=setRevenueMode;
-window.loadStaffRevenue=loadStaffRevenue;
 async function printOrder(id) {
   const o = await api('/api/orders/' + id);
   openModal(`<div class="invoice"><h1>Mindset</h1><p style="text-align:center">HÓA ĐƠN #${o.id}</p><p>${fmtDate(o.created_at)}<br>Nhân viên: ${esc(o.staff)}</p><table>${o.items.map(x => `<tr><td><strong>${esc(x.item_name)} x${x.quantity}</strong><br><small>Đường ${x.sugar_percent}% · Đá ${x.ice_percent}%<br>${x.toppings.map(t => esc(t.name)).join(', ') || 'Không topping'}</small></td><td class="r">${money(x.line_total)}</td></tr>`).join('')}</table><hr><p class="r"><b>TỔNG: ${money(o.total)}</b></p><p style="text-align:center">Cảm ơn quý khách!</p></div><div class="modal-actions no-print"><button class="btn" onclick="window.print()">In</button><button class="btn" onclick="closeModal()">Đóng</button></div>`);
@@ -612,10 +496,10 @@ function showReportMode(mode) {
   const today = new Date().toISOString().slice(0,10);
   const month = today.slice(0,7);
   if (mode === 'day') {
-    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn ngày<input id="reportDate" type="date" value="${today}"></label><button class="btn primary" onclick="loadReportDay()">Xem doanh thu</button></div>`;
+    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn ngày<input id="reportDate" type="date" value="${today}"></label><button class="btn primary" onclick="loadReportDay()">Xem doanh thu</button><button class="btn danger report-reset-btn" onclick="resetSelectedReport('day')">Reset doanh thu ngày này</button></div>`;
     $('#reportArea').innerHTML = '<div class="empty">Chọn ngày rồi bấm “Xem doanh thu”</div>';
   } else {
-    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn tháng<input id="reportMonth" type="month" value="${month}"></label><button class="btn primary" onclick="loadReportMonth()">Xem doanh thu</button></div>`;
+    $('#reportControls').innerHTML = `<div class="report-selector"><label>Chọn tháng<input id="reportMonth" type="month" value="${month}"></label><button class="btn primary" onclick="loadReportMonth()">Xem doanh thu</button><button class="btn danger report-reset-btn" onclick="resetSelectedReport('month')">Reset doanh thu tháng này</button></div>`;
     $('#reportArea').innerHTML = '<div class="empty">Chọn tháng rồi bấm “Xem doanh thu”</div>';
   }
 }
@@ -646,6 +530,40 @@ async function loadReportRange(from, to, title) {
 window.showReportMode = showReportMode;
 window.loadReportDay = loadReportDay;
 window.loadReportMonth = loadReportMonth;
+window.resetSelectedReport = resetSelectedReport;
+
+async function resetSelectedReport(mode) {
+  let from = '', to = '', label = '';
+  if (mode === 'day') {
+    const date = $('#reportDate')?.value;
+    if (!date) return toast('Hãy chọn ngày', true);
+    from = date; to = date;
+    label = `ngày ${date.split('-').reverse().join('/')}`;
+  } else {
+    const month = $('#reportMonth')?.value;
+    if (!month) return toast('Hãy chọn tháng', true);
+    const [year, m] = month.split('-').map(Number);
+    const last = new Date(year, m, 0).getDate();
+    from = `${year}-${String(m).padStart(2,'0')}-01`;
+    to = `${year}-${String(m).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
+    label = `tháng ${String(m).padStart(2,'0')}/${year}`;
+  }
+  confirmDelete({
+    title: 'Reset doanh thu?',
+    message: `Toàn bộ doanh thu của ${label} sẽ được đưa về 0. Các đơn vẫn được giữ lại trong hệ thống nhưng không còn được tính vào doanh thu. Bạn có chắc muốn tiếp tục?`,
+    item: '',
+    onConfirm: async () => {
+      const result = await api('/api/admin/reports/reset', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({from, to})
+      });
+      toast(`Đã reset ${result.affected || 0} đơn của ${label}`);
+      await loadReportRange(from, to, mode === 'day' ? `Doanh thu ${label}` : `Doanh thu ${label}`);
+    }
+  });
+  $('#confirmDeleteButton').textContent = 'Reset doanh thu';
+}
 
 function openModal(html) { $('#modalBox').innerHTML = html; $('#modal').classList.remove('hidden'); }
 function closeModal() { $('#modal').classList.add('hidden'); window.__productDraft = null; window.__editIndex = null; }
