@@ -393,3 +393,13 @@ body.modal-open { overflow: hidden; }
   white-space: nowrap;
   line-height: 1;
 }
+
+
+/* V11.3: Category management layout */
+.category-management{margin-bottom:18px;padding:16px 18px;background:#f7faf8;border:1px solid var(--line);border-radius:14px}
+.category-management-title{margin-bottom:12px}
+.category-management-title h3{margin:0;font-size:20px}
+.category-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.category-actions .category-chips{display:contents}
+.category-add-btn{white-space:nowrap}
+.menu-section-head{margin-top:4px;margin-bottom:12px}
