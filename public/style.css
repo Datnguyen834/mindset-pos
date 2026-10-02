@@ -203,7 +203,7 @@ body{font-size:15px}
     overflow: hidden;
   }
   #page.pos-page .menu-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
     grid-auto-rows: min-content;
     min-height: 0;
     overflow-y: auto;
