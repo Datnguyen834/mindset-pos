@@ -481,7 +481,12 @@ async function runConfirmDelete() {
 }
 
 async function api(url, opt = {}) {
-  const r = await fetch(url, { credentials: 'same-origin', ...opt });
+  const options = { credentials: 'same-origin', ...opt };
+  const savedToken = localStorage.getItem('mindset_auth_token');
+  if (savedToken) {
+    options.headers = { ...(options.headers || {}), Authorization: `Bearer ${savedToken}` };
+  }
+  const r = await fetch(url, options);
   let d = {};
   try { d = await r.json(); } catch {}
   if (!r.ok) throw new Error(d.message || 'Có lỗi xảy ra');
@@ -528,6 +533,10 @@ async function boot({ animate = false } = {}) {
   try {
     const me = await api('/api/auth/me');
     state.user = me.user;
+
+    // Đã xác thực thành công: lưu thông tin phiên ở phía trình duyệt để F5
+    // vẫn khôi phục được POS ngay cả khi cookie bị trình duyệt/hosting bỏ qua.
+    localStorage.setItem('mindset_auth_user', JSON.stringify(me.user));
 
     // Chuẩn bị toàn bộ dữ liệu trước khi mở POS để không thấy màn hình trắng.
     await loadBase();
@@ -1779,6 +1788,8 @@ async function exitAppFullscreen() {
 
 async function logout() {
   await api('/api/auth/logout',{method:'POST'}).catch(()=>{});
+  localStorage.removeItem('mindset_auth_token');
+  localStorage.removeItem('mindset_auth_user');
   await exitAppFullscreen();
   location.reload();
 }
@@ -1828,7 +1839,7 @@ $('#loginForm').addEventListener('submit', async e => {
   const fullscreenStarted = await enterAppFullscreen();
 
   try {
-    await api('/api/auth/login',{
+    const loginResult = await api('/api/auth/login',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -1836,6 +1847,15 @@ $('#loginForm').addEventListener('submit', async e => {
         password:$('#loginPass').value
       })
     });
+
+    // Lưu JWT làm phương án dự phòng cho cookie. Khi F5, api() sẽ gửi token này
+    // qua Authorization nên phiên đăng nhập không bị mất.
+    if (loginResult.token) {
+      localStorage.setItem('mindset_auth_token', loginResult.token);
+    }
+    if (loginResult.user) {
+      localStorage.setItem('mindset_auth_user', JSON.stringify(loginResult.user));
+    }
 
     // Chỉ sau khi đăng nhập thành công mới chạy transition sang POS.
     await boot({ animate:true });
