@@ -519,6 +519,11 @@ app.post('/api/payos/webhook', async (req,res)=>{
         await client.query('ROLLBACK');
         return res.status(200).send('OK');
       }
+      if(order.status!=='pending'){
+        await client.query('ROLLBACK');
+        console.log('payOS webhook ignored for non-pending order:', {orderCode,status:order.status});
+        return res.status(200).send('OK');
+      }
 
       if(order.customer_id){
         const cr=await client.query('SELECT id,points FROM customers WHERE id=$1 FOR UPDATE',[order.customer_id]);

@@ -1045,7 +1045,10 @@ function renderTransferPaymentModal(p) {
     <div class="eyebrow">Thanh toán chuyển khoản</div>
     <h3>Quét mã QR để thanh toán</h3>
     <p class="muted">Đơn <b>#${p.orderId}</b> · Số tiền <b>${money(p.total)}</b></p>
-    <div class="payos-qr-wrap"><canvas id="${qrId}" width="300" height="300"></canvas></div>
+    <div class="payos-qr-wrap">
+      <img id="payosQrImage" class="payos-qr-image" alt="Mã QR thanh toán payOS" src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=8&data=${encodeURIComponent(p.qrCode)}">
+      <canvas id="${qrId}" width="300" height="300" hidden></canvas>
+    </div>
     <div class="payos-waiting"><span class="payos-spinner"></span><b>Đang chờ ngân hàng xác nhận...</b></div>
     <div class="cash-summary">
       <div><span>Tổng bill</span><b>${money(p.total)}</b></div>
@@ -1057,13 +1060,21 @@ function renderTransferPaymentModal(p) {
     </div>
   </div>`);
 
-  if (window.QRCode && document.getElementById(qrId)) {
-    QRCode.toCanvas(document.getElementById(qrId), p.qrCode, {
-      width: 300, margin: 2, errorCorrectionLevel: 'M'
-    }, (err) => {
-      if (err) console.error(err);
-    });
+  const qrImage = document.getElementById('payosQrImage');
+  if (qrImage) {
+    qrImage.addEventListener('error', () => {
+      // Fallback to the bundled/browser QRCode library when the image service is unavailable.
+      if (window.QRCode && document.getElementById(qrId)) {
+        const canvas = document.getElementById(qrId);
+        canvas.hidden = false;
+        qrImage.style.display = 'none';
+        QRCode.toCanvas(canvas, p.qrCode, {
+          width: 300, margin: 2, errorCorrectionLevel: 'M'
+        }, (err) => { if (err) console.error(err); });
+      }
+    }, {once:true});
   }
+  if (qrImage && qrImage.complete && qrImage.naturalWidth === 0) qrImage.dispatchEvent(new Event('error'));
 }
 
 function beginTransferPaymentPolling(orderId) {
