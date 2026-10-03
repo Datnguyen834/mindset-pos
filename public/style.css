@@ -1114,6 +1114,40 @@ body.modal-open { overflow: hidden; }
 @media(max-width:620px){.customer-search-row{grid-template-columns:1fr}.customer-point-card{grid-template-columns:1fr}.customer-choice{flex-direction:column;align-items:flex-start}.customer-choice b{text-align:left}}
 .customer-choice small{display:block;margin-top:5px;font-size:12px;font-weight:500;opacity:.72}
 
+
+/* Nút đổi điểm khách hàng: chỉ bật khi khách có thể dùng điểm */
+.customer-point-action{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:48px;
+  border-radius:11px;
+  padding:12px 16px;
+  margin-top:14px;
+  border:1px solid var(--line);
+  background:#edf1ef;
+  color:#8a938e;
+  font:inherit;
+  font-weight:900;
+  cursor:not-allowed;
+  transition:.16s ease;
+}
+.customer-point-action.active{
+  border-color:var(--green);
+  background:var(--green);
+  color:#fff;
+  cursor:pointer;
+  box-shadow:0 5px 14px rgba(13,67,53,.12);
+}
+.customer-point-action.active:hover{
+  filter:brightness(.96);
+  transform:translateY(-1px);
+}
+.customer-point-action.disabled{
+  opacity:.8;
+}
+
 /* Khách hàng trong đơn hàng */
 .customer-cart-btn{
   width:100%;

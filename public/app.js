@@ -1016,8 +1016,10 @@ function renderCustomerFoundModal() {
   const c = state.checkoutCustomer.customer;
   const baseTotal = cartDiscountInfo().total;
   const possiblePoints = Math.min(Number(c.points || 0), Math.floor(baseTotal / CUSTOMER_POINT_DISCOUNT_VALUE));
-  const possibleDiscount = possiblePoints * CUSTOMER_POINT_DISCOUNT_VALUE;
-  const afterPoints = Math.max(0, baseTotal - possibleDiscount);
+  const alreadyRedeemed = !!state.checkoutCustomer.redeem;
+  const redeemButtonClass = possiblePoints > 0 && !alreadyRedeemed ? 'customer-point-action active' : 'customer-point-action disabled';
+  const redeemLabel = alreadyRedeemed ? 'Đã dùng điểm' : 'Discount point';
+
   openModal(`<div class="customer-loyalty-modal">
     <div class="customer-modal-head">
       <div><span class="eyebrow">Khách hàng</span><h3>${esc(c.fullName)}</h3><p class="muted">${esc(c.phone)}</p></div>
@@ -1027,14 +1029,8 @@ function renderCustomerFoundModal() {
       <div><span>Số điểm hiện có</span><strong>${Number(c.points || 0)} điểm</strong></div>
       <div><span>Giá trị điểm</span><strong>${money(Number(c.points || 0) * CUSTOMER_POINT_DISCOUNT_VALUE)}</strong></div>
     </div>
-    <p class="customer-question">Khách có muốn trừ điểm cho hóa đơn này không?</p>
-    ${possiblePoints > 0
-      ? `<button type="button" class="customer-choice redeem" onclick="chooseCustomerOption(true)">
-          <span>Dùng ${possiblePoints} điểm</span><b>Giảm ${money(possibleDiscount)} · Còn ${money(afterPoints)}</b>
-        </button>`
-      : '<div class="customer-empty-points">Khách chưa có đủ điểm để giảm hóa đơn này.</div>'}
-    <button type="button" class="customer-choice" onclick="chooseCustomerOption(false)">
-      <span>Không dùng điểm</span><b>Tích thêm sau thanh toán</b>
+    <button type="button" class="${redeemButtonClass}" ${possiblePoints > 0 && !alreadyRedeemed ? `onclick="chooseCustomerOption(true)"` : 'disabled'}>
+      <span>${redeemLabel}</span>
     </button>
   </div>`);
 }
