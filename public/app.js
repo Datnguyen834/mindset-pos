@@ -498,10 +498,16 @@ function fmtDate(x) {
   return new Date(x).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+function fmtBirthDate(x) {
+  if (!x) return 'Chưa cập nhật';
+  const m = String(x).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : esc(String(x));
+}
+
 function nav() {
   const admin = ['admin','manager'].includes(state.user.role);
   const items = admin
-    ? [['pos','☕','Menu'],['orders','▣','Doanh thu'],['users','♙','Quản lý nhân viên'],['settings','⚙','Cài đặt']]
+    ? [['pos','☕','Menu'],['orders','▣','Doanh thu'],['users','♙','Quản lý nhân viên'],['members','👥','Quản lý thành viên'],['settings','⚙','Cài đặt']]
     : [['pos','☕','Menu']];
   $('#nav').innerHTML = items.map(([p, icon, label]) =>
     `<button class="nav-item ${state.page === p ? 'active' : ''}" onclick="go('${p}')"><span class="nav-icon">${icon}</span><span>${label}</span></button>`
@@ -606,6 +612,7 @@ function renderPage() {
   if (state.page === 'pos') renderPOS();
   if (state.page === 'orders') renderOrders();
   if (state.page === 'users') renderUsers();
+  if (state.page === 'members') renderMembers();
   if (state.page === 'settings') renderSettings();
 }
 
@@ -1194,9 +1201,11 @@ function renderCustomerFoundModal(customer = null, isSearchPreview = false) {
       <div><span class="eyebrow">Khách hàng</span><h3>${esc(c.fullName)}</h3><p class="muted">${esc(c.phone)}</p></div>
       <button class="modal-close-x" type="button" onclick="closeCustomerPicker()">×</button>
     </div>
-    <div class="customer-point-card">
+    <div class="customer-point-card customer-info-grid">
+      <div><span>Ngày sinh</span><strong>${fmtBirthDate(c.birthDate)}</strong></div>
       <div><span>Số điểm hiện có</span><strong>${Number(c.points || 0)} điểm</strong></div>
       <div><span>Tổng chi tiêu</span><strong>${money(Number(c.totalSpend || 0))}</strong></div>
+      <div><span>Số điện thoại</span><strong>${esc(c.phone)}</strong></div>
     </div>
     <button type="button" class="${redeemButtonClass}" ${canRedeem ? `onclick="chooseCustomerOption(true)"` : 'disabled'}>
       <span>${redeemLabel}</span>
@@ -1238,15 +1247,18 @@ function showCreateCustomerForm(phone) {
       <button class="modal-close-x" type="button" onclick="closeCustomerPicker()">×</button>
     </div>
     <label class="customer-name-label">Họ tên khách hàng<input id="newCustomerName" autocomplete="name" placeholder="Nhập họ tên"></label>
+    <label class="customer-name-label">Ngày tháng năm sinh<input id="newCustomerBirthDate" type="date" required></label>
     <div class="modal-actions"><button class="btn" onclick="renderCustomerNotFoundModal('${esc(phone)}')">Quay lại</button><button class="btn primary" onclick="createCustomerAndContinue('${esc(phone)}')">Tạo tài khoản</button></div>
   </div>`);
 }
 
 async function createCustomerAndContinue(phone) {
   const fullName = String($('#newCustomerName')?.value || '').trim();
+  const birthDate = String($('#newCustomerBirthDate')?.value || '').trim();
   if (!fullName) return toast('Nhập họ tên khách hàng', true);
+  if (!birthDate) return toast('Nhập ngày tháng năm sinh', true);
   try {
-    const d = await api('/api/customers', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({phone,fullName})});
+    const d = await api('/api/customers', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({phone,fullName,birthDate})});
     state.checkoutCustomer = { customer: d.customer, redeem: false };
     if (state.customerPickerMode === 'cart') {
       closeModal();
@@ -1332,7 +1344,7 @@ async function completePayment(method, cashMeta = null) {
       customerId: state.checkoutCustomer?.customer?.id || null,
       redeemPoints: !!state.checkoutCustomer?.redeem
     })});
-    const customerResult = d.customer ? `<div class="customer-success-summary"><span>Khách hàng</span><b>${esc(d.customer.fullName)}</b><span>Điểm hiện tại</span><b>${Number(d.customer.points || 0)} điểm</b>${d.pointsUsed ? `<span>Đã trừ</span><b>${d.pointsUsed} điểm (-${money(d.pointsDiscount)})</b>` : ''}${d.pointsEarned ? `<span>Tích thêm</span><b>+${d.pointsEarned} điểm</b>` : ''}</div>` : '';
+    const customerResult = d.customer ? `<div class="customer-success-summary"><span>Khách hàng</span><b>${esc(d.customer.fullName)}</b><span>Ngày sinh</span><b>${fmtBirthDate(d.customer.birthDate)}</b><span>Điểm hiện tại</span><b>${Number(d.customer.points || 0)} điểm</b>${d.pointsUsed ? `<span>Đã trừ</span><b>${d.pointsUsed} điểm (-${money(d.pointsDiscount)})</b>` : ''}${d.pointsEarned ? `<span>Tích thêm</span><b>+${d.pointsEarned} điểm</b>` : ''}</div>` : '';
     state.cart = [];
     state.checkoutCustomer = {customer:null,redeem:false};
     closeModal();
@@ -1485,7 +1497,7 @@ async function printOrder(id) {
 
 function renderUsersTable(users) {
   state.userList = users;
-  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Quản lý nhân viên</h1><p>Tạo tài khoản, đổi mật khẩu và phân quyền.</p></div><button class="btn primary" onclick="userForm()">+ Thêm tài khoản</button></div><div class="table-card"><table class="data-table"><thead><tr><th>Tài khoản</th><th>Họ tên</th><th>Quyền</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>${users.map(u => `<tr><td>${esc(u.username)}</td><td>${esc(u.fullName)}</td><td><b>${u.role === 'admin' ? 'Admin tổng' : (u.role === 'manager' ? 'Quản lý' : 'Nhân viên')}</b></td><td>${u.active ? 'Đang hoạt động' : 'Đã khóa'}</td><td>${u.username === 'admin' ? '<span class="muted">Bảo vệ</span>' : `<button class="btn small" onclick='userForm(${JSON.stringify(u)})'>Sửa</button> <button class="btn small danger" onclick="deleteUser(${u.id})">Xóa</button>`}</td></tr>`).join('')}</tbody></table></div></div>`;
+  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Quản lý nhân viên</h1><p>Tạo tài khoản, đổi mật khẩu và phân quyền.</p></div><button class="btn primary" onclick="userForm()">+ Thêm tài khoản</button></div><div class="table-card"><table class="data-table"><thead><tr><th>Tài khoản</th><th>Họ tên</th><th>Ngày sinh</th><th>Quyền</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>${users.map(u => `<tr><td>${esc(u.username)}</td><td>${esc(u.fullName)}</td><td>${fmtBirthDate(u.birthDate)}</td><td><b>${u.role === 'admin' ? 'Admin tổng' : (u.role === 'manager' ? 'Quản lý' : 'Nhân viên')}</b></td><td>${u.active ? 'Đang hoạt động' : 'Đã khóa'}</td><td>${u.username === 'admin' ? '<span class="muted">Bảo vệ</span>' : `<button class="btn small" onclick='userForm(${JSON.stringify(u)})'>Sửa</button> <button class="btn small danger" onclick="deleteUser(${u.id})">Xóa</button>`}</td></tr>`).join('')}</tbody></table></div></div>`;
 }
 
 async function renderUsers(forceRefresh = false) {
@@ -1508,12 +1520,13 @@ async function renderUsers(forceRefresh = false) {
 }
 
 function userForm(u = {}) {
-  openModal(`<h3>${u.id ? 'Sửa tài khoản' : 'Thêm tài khoản'}</h3><div class="form-grid"><label>Tài khoản<input id="fUsername" value="${esc(u.username || '')}" ${u.id ? 'disabled' : ''}></label><label>Họ tên<input id="fFullName" value="${esc(u.fullName || '')}"></label><label>Mật khẩu<input id="fPassword" type="password" placeholder="${u.id ? 'Để trống nếu không đổi' : ''}"></label><label>Quyền<select id="fRole"><option value="staff" ${u.role === 'staff' ? 'selected' : ''}>Nhân viên</option><option value="manager" ${u.role === 'manager' ? 'selected' : ''}>Quản lý</option></select></label></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick='saveUser(${u.id || 'null'})'>Lưu</button></div>`);
+  openModal(`<h3>${u.id ? 'Sửa tài khoản' : 'Thêm tài khoản'}</h3><div class="form-grid"><label>Tài khoản<input id="fUsername" value="${esc(u.username || '')}" ${u.id ? 'disabled' : ''}></label><label>Họ tên<input id="fFullName" value="${esc(u.fullName || '')}"></label><label>Ngày tháng năm sinh<input id="fBirthDate" type="date" value="${esc(u.birthDate || '')}" ${u.id ? '' : 'required'}></label><label>Mật khẩu<input id="fPassword" type="password" placeholder="${u.id ? 'Để trống nếu không đổi' : ''}"></label><label>Quyền<select id="fRole"><option value="staff" ${u.role === 'staff' ? 'selected' : ''}>Nhân viên</option><option value="manager" ${u.role === 'manager' ? 'selected' : ''}>Quản lý</option></select></label></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick='saveUser(${u.id || 'null'})'>Lưu</button></div>`);
 }
 
 async function saveUser(id) {
   try {
-    const body = { fullName:$('#fFullName').value, role:$('#fRole').value };
+    const body = { fullName:$('#fFullName').value, birthDate:$('#fBirthDate').value, role:$('#fRole').value };
+    if (!id && !body.birthDate) throw new Error('Cần nhập ngày tháng năm sinh');
     if ($('#fPassword').value) body.password = $('#fPassword').value;
     if (!id) { body.username = $('#fUsername').value; if (!body.password) throw new Error('Cần nhập mật khẩu'); }
     await api(id ? `/api/admin/users/${id}` : '/api/admin/users', { method:id ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
@@ -1538,6 +1551,67 @@ async function deleteUser(id) {
       await renderUsers(true);
     }
   });
+}
+
+function renderMemberCard(member) {
+  const c = member;
+  $('#page').innerHTML = `<div class="content members-content">
+    <div class="page-title"><div><h1>Quản lý thành viên</h1><p>Tìm thành viên bằng số điện thoại và chỉnh sửa thông tin.</p></div></div>
+    <div class="member-search-card"><div class="member-search-row"><input id="memberPhoneSearch" inputmode="numeric" maxlength="15" placeholder="Nhập số điện thoại thành viên" onkeydown="if(event.key==='Enter')searchMember()"><button class="btn primary" onclick="searchMember()">Tìm</button></div></div>
+    <div class="table-card member-result-card"><div class="member-empty">Nhập số điện thoại để tìm thành viên.</div></div>
+  </div>`;
+}
+
+async function searchMember() {
+  const phone = String($('#memberPhoneSearch')?.value || '').replace(/\D/g,'');
+  if (!phone) return toast('Nhập số điện thoại thành viên', true);
+  const card = $('.member-result-card');
+  if (card) card.innerHTML = '<div class="member-empty">Đang tìm thành viên...</div>';
+  try {
+    const d = await api('/api/admin/members/search?phone=' + encodeURIComponent(phone));
+    if (!d.member) {
+      card.innerHTML = '<div class="member-empty">Không tìm thấy thành viên với số điện thoại này.</div>';
+      return;
+    }
+    renderMemberResult(d.member);
+  } catch(e) {
+    if (card) card.innerHTML = `<div class="member-empty error-empty">${esc(e.message || 'Không tìm được thành viên')}</div>`;
+  }
+}
+
+function renderMemberResult(m) {
+  $('.member-result-card').innerHTML = `<div class="member-detail-grid">
+    <div><span>Số điện thoại</span><b>${esc(m.phone)}</b></div>
+    <div><span>Họ tên</span><b>${esc(m.fullName)}</b></div>
+    <div><span>Ngày tháng năm sinh</span><b>${fmtBirthDate(m.birthDate)}</b></div>
+    <div><span>Số điểm</span><b>${Number(m.points || 0)} điểm</b></div>
+    <div><span>Tổng chi tiêu năm nay</span><b>${money(Number(m.totalSpend || 0))}</b></div>
+  </div><div class="member-result-actions"><button class="btn primary" onclick='memberForm(${JSON.stringify(m)})'>Chỉnh sửa</button></div>`;
+}
+
+function memberForm(m) {
+  openModal(`<h3>Chỉnh sửa thành viên</h3><div class="form-grid">
+    <label>Số điện thoại<input value="${esc(m.phone || '')}" disabled></label>
+    <label>Họ tên<input id="mFullName" value="${esc(m.fullName || '')}"></label>
+    <label>Ngày tháng năm sinh<input id="mBirthDate" type="date" value="${esc(m.birthDate || '')}" required></label>
+  </div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="saveMember(${m.id})">Lưu</button></div>`);
+}
+
+async function saveMember(id) {
+  const fullName = String($('#mFullName')?.value || '').trim();
+  const birthDate = String($('#mBirthDate')?.value || '').trim();
+  if (!fullName) return toast('Nhập họ tên thành viên', true);
+  if (!birthDate) return toast('Nhập ngày tháng năm sinh', true);
+  try {
+    const d = await api('/api/admin/members/' + id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({fullName,birthDate})});
+    closeModal();
+    renderMemberResult(d.member);
+    toast('Đã cập nhật thành viên');
+  } catch(e) { toast(e.message || 'Không cập nhật được thành viên', true); }
+}
+
+async function renderMembers() {
+  renderMemberCard(null);
 }
 
 async function renderSettings() {
@@ -2013,5 +2087,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,toggleCatVisibility,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,toggleCatVisibility,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,searchMember,memberForm,saveMember,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();

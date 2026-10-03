@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS users (
   full_name VARCHAR(120) NOT NULL,
   role VARCHAR(20) NOT NULL DEFAULT 'staff' CHECK (role IN ('admin','manager','staff')),
   active BOOLEAN NOT NULL DEFAULT TRUE,
+  birth_date DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS customers (
   id SERIAL PRIMARY KEY,
   phone VARCHAR(20) UNIQUE NOT NULL,
   full_name VARCHAR(120) NOT NULL,
+  birth_date DATE,
   points INTEGER NOT NULL DEFAULT 0 CHECK (points >= 0),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -107,6 +109,8 @@ CREATE INDEX IF NOT EXISTS idx_shifts_user_id ON shifts(user_id);
 -- Safe migration for existing Render/PostgreSQL databases.
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS sugar_percent INTEGER NOT NULL DEFAULT 100;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS ice_percent INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS birth_date DATE;
 
 -- Hard-delete users while preserving historical orders. Deleted users leave their
 -- orders in the database with a NULL user_id instead of blocking account deletion.

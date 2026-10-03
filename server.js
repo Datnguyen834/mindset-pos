@@ -174,22 +174,41 @@ function normalizePhone(value) { return String(value || '').replace(/\D/g, '').s
 app.get('/api/customers/search', auth, async (req,res)=>{
   const phone = normalizePhone(req.query.phone);
   if (!phone) return res.status(400).json({message:'Nhập số điện thoại'});
-  const r = await q(`SELECT c.id,c.phone,c.full_name AS "fullName",c.points,COALESCE((SELECT SUM(o.total) FROM orders o WHERE o.customer_id=c.id AND o.status='paid' AND o.created_at >= date_trunc('year', NOW())),0)::int AS "totalSpend" FROM customers c WHERE c.phone=$1 LIMIT 1`,[phone]);
+  const r = await q(`SELECT c.id,c.phone,c.full_name AS "fullName",c.birth_date AS "birthDate",c.points,COALESCE((SELECT SUM(o.total) FROM orders o WHERE o.customer_id=c.id AND o.status='paid' AND o.created_at >= date_trunc('year', NOW())),0)::int AS "totalSpend" FROM customers c WHERE c.phone=$1 LIMIT 1`,[phone]);
   res.json({customer: r.rows[0] || null});
 });
 
 app.post('/api/customers', auth, async (req,res)=>{
   const phone = normalizePhone(req.body.phone);
   const fullName = String(req.body.fullName || '').trim();
+  const birthDate = String(req.body.birthDate || '').trim();
   if (!phone || phone.length < 9) return res.status(400).json({message:'Số điện thoại không hợp lệ'});
   if (!fullName) return res.status(400).json({message:'Nhập họ tên khách hàng'});
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return res.status(400).json({message:'Vui lòng nhập ngày tháng năm sinh'});
   try {
-    const r = await q('INSERT INTO customers(phone,full_name) VALUES($1,$2) RETURNING id,phone,full_name AS "fullName",points',[phone,fullName]);
+    const r = await q('INSERT INTO customers(phone,full_name,birth_date) VALUES($1,$2,$3) RETURNING id,phone,full_name AS "fullName",birth_date AS "birthDate",points',[phone,fullName,birthDate]);
     res.json({customer:{...r.rows[0],totalSpend:0}});
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({message:'Số điện thoại này đã có tài khoản'});
     res.status(400).json({message:'Không tạo được tài khoản khách hàng'});
   }
+});
+
+app.get('/api/admin/members/search', auth, adminOnly, async (req,res)=>{
+  const phone = normalizePhone(req.query.phone);
+  if (!phone) return res.status(400).json({message:'Nhập số điện thoại thành viên'});
+  const r = await q(`SELECT c.id,c.phone,c.full_name AS "fullName",c.birth_date AS "birthDate",c.points,COALESCE((SELECT SUM(o.total) FROM orders o WHERE o.customer_id=c.id AND o.status='paid' AND o.created_at >= date_trunc('year', NOW())),0)::int AS "totalSpend",c.created_at AS "createdAt" FROM customers c WHERE c.phone=$1 LIMIT 1`,[phone]);
+  res.json({member:r.rows[0] || null});
+});
+
+app.put('/api/admin/members/:id', auth, adminOnly, async (req,res)=>{
+  const fullName = String(req.body.fullName || '').trim();
+  const birthDate = String(req.body.birthDate || '').trim();
+  if (!fullName) return res.status(400).json({message:'Nhập họ tên thành viên'});
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return res.status(400).json({message:'Ngày tháng năm sinh không hợp lệ'});
+  const r = await q('UPDATE customers SET full_name=$1,birth_date=$2,updated_at=NOW() WHERE id=$3 RETURNING id,phone,full_name AS "fullName",birth_date AS "birthDate",points',[fullName,birthDate,req.params.id]);
+  if (!r.rowCount) return res.status(404).json({message:'Không tìm thấy thành viên'});
+  res.json({member:r.rows[0]});
 });
 
 app.post('/api/orders',auth,async(req,res)=>{
@@ -232,7 +251,7 @@ app.post('/api/orders',auth,async(req,res)=>{
     let pointsEarned = 0;
     let pointsDiscount = 0;
     if(customerId){
-      const cr=await client.query('SELECT id,phone,full_name AS "fullName",points FROM customers WHERE id=$1 FOR UPDATE',[customerId]);
+      const cr=await client.query('SELECT id,phone,full_name AS "fullName",birth_date AS "birthDate",points FROM customers WHERE id=$1 FOR UPDATE',[customerId]);
       if(!cr.rowCount) throw new Error('Không tìm thấy tài khoản khách hàng');
       customer=cr.rows[0];
       if(redeemPoints){
@@ -281,7 +300,7 @@ app.post('/api/orders',auth,async(req,res)=>{
         return res.json({
           orderId: order.rows[0].id,
           total,subtotal,discount:automaticDiscount+pointsDiscount,discountPercent,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,status:initialStatus,
-          customer:customer?{id:customer.id,fullName:customer.fullName,points:customer.points}:null,
+          customer:customer?{id:customer.id,fullName:customer.fullName,birthDate:customer.birthDate,points:customer.points}:null,
           checkoutUrl: paymentLink.checkoutUrl || '',
           qrCode: paymentLink.qrCode || '',
           qrImage: paymentLink.qrCode ? await QRCode.toDataURL(paymentLink.qrCode, { width: 300, margin: 1, errorCorrectionLevel: 'M' }) : '',
@@ -392,13 +411,13 @@ app.get('/api/orders/:id',auth,async(req,res)=>{
 app.get('/api/admin/users',auth,adminOnly,async(req,res)=>{
   // Quản lý chỉ được xem danh sách nhân viên; admin tổng mới thấy toàn bộ tài khoản.
   const sql = req.user.role === 'manager'
-    ? 'SELECT id,username,full_name AS "fullName",role,active,created_at FROM users WHERE role=\'staff\' ORDER BY id'
-    : 'SELECT id,username,full_name AS "fullName",role,active,created_at FROM users ORDER BY id';
+    ? 'SELECT id,username,full_name AS "fullName",birth_date AS "birthDate",role,active,created_at FROM users WHERE role=\'staff\' ORDER BY id'
+    : 'SELECT id,username,full_name AS "fullName",birth_date AS "birthDate",role,active,created_at FROM users ORDER BY id';
   const r=await q(sql);
   res.json(r.rows);
 });
-app.post('/api/admin/users',auth,adminOnly,async(req,res)=>{const {username,password,fullName,role='staff'}=req.body;if(!username||!password||!fullName)return res.status(400).json({message:'Thiếu thông tin'});if(!['manager','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});try{const h=await bcrypt.hash(password,10);const r=await q('INSERT INTO users(username,password_hash,full_name,role) VALUES($1,$2,$3,$4) RETURNING id,username,full_name AS "fullName",role,active',[username,h,fullName,role]);res.json(r.rows[0]);}catch(e){res.status(400).json({message:'Username đã tồn tại'});}});
-app.put('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{const target=await q('SELECT id,username,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].username==='admin')return res.status(403).json({message:'Tài khoản quản trị gốc không thể chỉnh sửa'});if(req.user.role==='manager' && target.rows[0].role!=='staff')return res.status(403).json({message:'Quản lý chỉ được chỉnh sửa tài khoản nhân viên'});const {fullName,password,role,active}=req.body;const sets=[];const vals=[];if(fullName!==undefined){vals.push(fullName);sets.push(`full_name=$${vals.length}`)}if(role!==undefined){if(!['manager','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});vals.push(role);sets.push(`role=$${vals.length}`)}if(active!==undefined){vals.push(!!active);sets.push(`active=$${vals.length}`)}if(password){vals.push(await bcrypt.hash(password,10));sets.push(`password_hash=$${vals.length}`)}if(!sets.length)return res.json({ok:true});vals.push(req.params.id);const r=await q(`UPDATE users SET ${sets.join(',')} WHERE id=$${vals.length} RETURNING id,username,full_name AS "fullName",role,active`,vals);res.json(r.rows[0]);});
+app.post('/api/admin/users',auth,adminOnly,async(req,res)=>{const {username,password,fullName,role='staff',birthDate}=req.body;if(!username||!password||!fullName||!birthDate)return res.status(400).json({message:'Vui lòng nhập đầy đủ tài khoản, mật khẩu, họ tên và ngày tháng năm sinh'});if(!['manager','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});if(!/^\d{4}-\d{2}-\d{2}$/.test(String(birthDate)))return res.status(400).json({message:'Ngày tháng năm sinh không hợp lệ'});try{const h=await bcrypt.hash(password,10);const r=await q('INSERT INTO users(username,password_hash,full_name,birth_date,role) VALUES($1,$2,$3,$4,$5) RETURNING id,username,full_name AS "fullName",birth_date AS "birthDate",role,active',[username,h,fullName,birthDate,role]);res.json(r.rows[0]);}catch(e){res.status(400).json({message:'Username đã tồn tại'});}});
+app.put('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{const target=await q('SELECT id,username,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].username==='admin')return res.status(403).json({message:'Tài khoản quản trị gốc không thể chỉnh sửa'});if(req.user.role==='manager' && target.rows[0].role!=='staff')return res.status(403).json({message:'Quản lý chỉ được chỉnh sửa tài khoản nhân viên'});const {fullName,password,role,active,birthDate}=req.body;const sets=[];const vals=[];if(fullName!==undefined){vals.push(fullName);sets.push(`full_name=$${vals.length}`)}if(birthDate!==undefined){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(birthDate)))return res.status(400).json({message:'Ngày tháng năm sinh không hợp lệ'});vals.push(birthDate);sets.push(`birth_date=$${vals.length}`)}if(role!==undefined){if(!['manager','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});vals.push(role);sets.push(`role=$${vals.length}`)}if(active!==undefined){vals.push(!!active);sets.push(`active=$${vals.length}`)}if(password){vals.push(await bcrypt.hash(password,10));sets.push(`password_hash=$${vals.length}`)}if(!sets.length)return res.json({ok:true});vals.push(req.params.id);const r=await q(`UPDATE users SET ${sets.join(',')} WHERE id=$${vals.length} RETURNING id,username,full_name AS "fullName",birth_date AS "birthDate",role,active`,vals);res.json(r.rows[0]);});
 app.delete('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{if(Number(req.params.id)===req.user.id)return res.status(400).json({message:'Không thể xóa tài khoản đang đăng nhập'});const target=await q('SELECT id,username,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].username==='admin')return res.status(403).json({message:'Tài khoản quản trị gốc không thể xóa'});if(req.user.role==='manager' && target.rows[0].role!=='staff')return res.status(403).json({message:'Quản lý chỉ được xóa tài khoản nhân viên'});const r=await q('DELETE FROM users WHERE id=$1 RETURNING id,username',[req.params.id]);res.json({ok:true,user:r.rows[0]});});
 
 app.post('/api/admin/menu',auth,adminOnly,upload.single('image'),async(req,res)=>{const {name,category='Khác',price}=req.body;if(!name||price===undefined)return res.status(400).json({message:'Thiếu tên/giá'});const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});const img=req.file?`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`:null;const r=await q('INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,$4) RETURNING id,name,category,price,image_data AS image,active',[name,category,money(price),img]);res.json(r.rows[0]);});
