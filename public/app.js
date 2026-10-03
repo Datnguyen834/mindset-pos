@@ -1000,20 +1000,117 @@ function buildVietQrUrl(amount, addInfo='MINDSET') {
   return `https://img.vietqr.io/image/${bankId}-${accountNo}-${template}.png?${qs.toString()}`;
 }
 
+let transferPaymentPoll = null;
+let transferPaymentOrderId = null;
+
 async function checkout() {
   if (!state.cart.length) return toast('Hãy chọn ít nhất một món', true);
   continueCheckoutAfterLoyalty();
 }
 
-function continueCheckoutAfterLoyalty() {
+async function startTransferPayment() {
   const info = checkoutDiscountInfo();
+  try {
+    const d = await api('/api/orders', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      items: state.cart.map(x => ({menuItemId:x.menuItemId, quantity:x.quantity, sugarPercent:x.sugarPercent, icePercent:x.icePercent, toppings:x.toppings.map(t => ({id:t.id,quantity:t.quantity}))})),
+      paymentMethod:'transfer',
+      customerId: state.checkoutCustomer?.customer?.id || null,
+      redeemPoints: !!state.checkoutCustomer?.redeem
+    })});
+
+    const p = await api('/api/payos/create-payment', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({orderId:d.orderId})
+    });
+
+    if (!p.qrCode) throw new Error('payOS không trả về mã QR cho đơn này');
+
+    transferPaymentOrderId = d.orderId;
+    renderTransferPaymentModal({
+      orderId:d.orderId,
+      total:d.total,
+      qrCode:p.qrCode,
+      checkoutUrl:p.checkoutUrl
+    });
+    beginTransferPaymentPolling(d.orderId);
+  } catch (e) {
+    toast(e.message || 'Không tạo được thanh toán chuyển khoản', true);
+  }
+}
+
+function renderTransferPaymentModal(p) {
+  const qrId = 'payosQrCanvas';
+  openModal(`<div class="checkout-loyalty-summary payos-transfer-modal">
+    <div class="eyebrow">Thanh toán chuyển khoản</div>
+    <h3>Quét mã QR để thanh toán</h3>
+    <p class="muted">Đơn <b>#${p.orderId}</b> · Số tiền <b>${money(p.total)}</b></p>
+    <div class="payos-qr-wrap"><canvas id="${qrId}" width="300" height="300"></canvas></div>
+    <div class="payos-waiting"><span class="payos-spinner"></span><b>Đang chờ ngân hàng xác nhận...</b></div>
+    <div class="cash-summary">
+      <div><span>Tổng bill</span><b>${money(p.total)}</b></div>
+      <div><span>Trạng thái</span><b id="payosPaymentStatus">Chờ thanh toán</b></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="cancelTransferPayment()">Hủy</button>
+      ${p.checkoutUrl ? `<a class="btn primary" href="${esc(p.checkoutUrl)}" target="_blank" rel="noopener">Mở trang thanh toán</a>` : ''}
+    </div>
+  </div>`);
+
+  if (window.QRCode && document.getElementById(qrId)) {
+    QRCode.toCanvas(document.getElementById(qrId), p.qrCode, {
+      width: 300, margin: 2, errorCorrectionLevel: 'M'
+    }, (err) => {
+      if (err) console.error(err);
+    });
+  }
+}
+
+function beginTransferPaymentPolling(orderId) {
+  if (transferPaymentPoll) clearInterval(transferPaymentPoll);
+  transferPaymentPoll = setInterval(async () => {
+    try {
+      const d = await api(`/api/payos/payment-status/${orderId}`);
+      const statusEl = $('#payosPaymentStatus');
+      if (statusEl) statusEl.textContent = d.status === 'paid' ? 'Đã nhận tiền' : 'Chờ thanh toán';
+      if (d.status === 'paid') {
+        clearInterval(transferPaymentPoll);
+        transferPaymentPoll = null;
+        await finishPaidTransfer(orderId);
+      }
+    } catch (e) {
+      // Keep polling while the modal is open; transient network errors are harmless.
+    }
+  }, 1200);
+}
+
+async function finishPaidTransfer(orderId) {
+  try {
+    const d = await api(`/api/orders/${orderId}`);
+    state.cart = [];
+    state.checkoutCustomer = {customer:null,redeem:false};
+    closeModal();
+    renderPOS();
+    const customerResult = d.customer_id ? `<div class="customer-success-summary"><span>Khách hàng</span><b>${esc(d.customer_name || '')}</b></div>` : '';
+    openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.id}</b> · Tổng tiền <b class="modal-total">${money(d.total)}</b></p>${customerResult}<p class="muted">payOS đã xác nhận tiền chuyển vào tài khoản.</p><p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.id})">In bill</button></div>`);
+    toast(`Đã nhận chuyển khoản #${d.id} — ${money(d.total)}`);
+  } catch (e) {
+    toast(e.message || 'Đã nhận thanh toán nhưng không tải được hóa đơn', true);
+  }
+}
+
+function cancelTransferPayment() {
+  if (transferPaymentPoll) {
+    clearInterval(transferPaymentPoll);
+    transferPaymentPoll = null;
+  }
+  transferPaymentOrderId = null;
+  closeModal();
+}
+
+function continueCheckoutAfterLoyalty() {
   if (state.paymentMethod === 'transfer') {
-    const bank = state.bankAccount || {};
-    if (!bank.bankId || !bank.accountNo || !bank.accountName) return toast('Chưa cấu hình tài khoản ngân hàng VietQR trong Cài đặt', true);
-    const ref = `MINDSET ${Date.now().toString().slice(-8)}`;
-    const qrUrl = buildVietQrUrl(info.total, ref);
-    if (!qrUrl) return toast('Thông tin VietQR chưa đầy đủ', true);
-    openModal(`<div class="checkout-loyalty-summary"><div class="eyebrow">Thanh toán</div><h3>Quét QR chuyển khoản</h3><p class="muted">QR VietQR tự động điền đúng số tiền <b>${money(info.total)}</b>.</p><img class="checkout-qr" src="${qrUrl}" alt="VietQR chuyển khoản"><div class="cash-summary"><div><span>Tổng bill</span><b>${money(info.total)}</b></div><div><span>Discount tự động</span><b>-${money(info.amount - info.pointsDiscount)}</b></div>${info.pointsDiscount > 0 ? `<div><span>Discount point</span><b>-${money(info.pointsDiscount)}</b></div>` : ''}<div><span>Còn phải thanh toán</span><b>${money(info.total)}</b></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('transfer')">Thanh toán thành công</button></div></div>`);
+    startTransferPayment();
   } else {
     openCashPaymentModal();
   }

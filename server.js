@@ -421,4 +421,22 @@ app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
 });
 app.get(/.*/,(req,res)=>res.sendFile(path.join(__dirname,'public/index.html')));
 
-initDb().then(()=>app.listen(PORT,()=>console.log(`Mindset POS running on ${PORT}`))).catch(err=>{console.error(err);process.exit(1)});
+async function confirmPayOSWebhookOnStartup() {
+  if (!payosConfigured || !payos) return;
+  const webhookUrl = `${publicBaseUrl()}/api/payos/webhook`;
+  try {
+    const result = await payos.webhooks.confirm(webhookUrl);
+    console.log('payOS webhook ready:', result?.data?.webhookUrl || webhookUrl);
+  } catch (e) {
+    console.error('payOS webhook setup failed:', e?.message || e);
+    console.error('Set PUBLIC_BASE_URL correctly and make sure the Render service is public, then retry from /api/payos/confirm-webhook.');
+  }
+}
+
+initDb()
+  .then(()=>app.listen(PORT,()=>{
+    console.log(`Mindset POS running on ${PORT}`);
+    setTimeout(confirmPayOSWebhookOnStartup, 1500);
+  }))
+  .catch(err=>{console.error(err);process.exit(1)});
+;

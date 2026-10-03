@@ -119,3 +119,11 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS automatic_discount INTEGER NOT NULL 
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS points_discount INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS points_used INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS points_earned INTEGER NOT NULL DEFAULT 0;
+
+
+-- payOS automatic transfer confirmation metadata
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_order_code BIGINT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_link_id TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_reference TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_order_code ON orders(payment_order_code) WHERE payment_order_code IS NOT NULL;

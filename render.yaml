@@ -13,3 +13,11 @@ services:
         generateValue: true
       - key: DATABASE_URL
         sync: false
+      - key: PUBLIC_BASE_URL
+        value: https://mindset-pos.onrender.com
+      - key: PAYOS_CLIENT_ID
+        sync: false
+      - key: PAYOS_API_KEY
+        sync: false
+      - key: PAYOS_CHECKSUM_KEY
+        sync: false
