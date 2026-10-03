@@ -1030,8 +1030,7 @@ async function startTransferPayment() {
     renderTransferPaymentModal({
       orderId:d.orderId,
       total:d.total,
-      qrCode:p.qrCode,
-      checkoutUrl:p.checkoutUrl
+      qrCode:p.qrCode
     });
     beginTransferPaymentPolling(d.orderId);
   } catch (e) {
@@ -1059,7 +1058,7 @@ function renderTransferPaymentModal(p) {
     </div>
   </div>`);
 
-  renderPayOSQr(p.qrCode, p.checkoutUrl);
+  renderPayOSQr(p.qrCode);
 }
 
 async function ensureQrCodeLibrary() {
@@ -1091,7 +1090,7 @@ async function ensureQrCodeLibrary() {
   return false;
 }
 
-async function renderPayOSQr(qrValue, checkoutUrl='') {
+async function renderPayOSQr(qrValue) {
   const wrap = document.querySelector('.payos-qr-wrap');
   if (!wrap) return;
   wrap.innerHTML = '<div class="payos-qr-loading">Đang tạo mã QR...</div>';
@@ -1101,8 +1100,8 @@ async function renderPayOSQr(qrValue, checkoutUrl='') {
     return;
   }
 
-  // payOS trả về chuỗi dữ liệu QR; tạo ảnh bằng thư viện QRCode để kích thước
-  // và vị trí luôn ổn định, không phụ thuộc CSS của canvas.
+  // Chỉ render đúng chuỗi QR do payOS trả về. Không tạo QR từ checkoutUrl
+  // vì đó là link thanh toán, không phải mã QR thanh toán của đơn.
   const ready = await ensureQrCodeLibrary();
   if (ready) {
     try {
@@ -1125,22 +1124,7 @@ async function renderPayOSQr(qrValue, checkoutUrl='') {
     }
   }
 
-  // Fallback cuối: tạo QR cho checkoutUrl để khách vẫn có thể mở trang payOS.
-  if (checkoutUrl) {
-    const img = new Image();
-    img.className = 'payos-qr-image';
-    img.width = 280;
-    img.height = 280;
-    img.alt = 'Mở trang thanh toán payOS';
-    img.referrerPolicy = 'no-referrer';
-    img.src = `https://quickchart.io/qr?text=${encodeURIComponent(checkoutUrl)}&size=280&margin=1`;
-    img.onload = () => { wrap.innerHTML = ''; wrap.appendChild(img); };
-    img.onerror = () => {
-      wrap.innerHTML = '<div class="payos-qr-error">Không thể hiển thị QR. Hãy bấm “Mở trang thanh toán”.</div>';
-    };
-    return;
-  }
-  wrap.innerHTML = '<div class="payos-qr-error">Không thể hiển thị mã QR.</div>';
+  wrap.innerHTML = '<div class="payos-qr-error">Không thể hiển thị mã QR payOS. Vui lòng thử lại.</div>';
 }
 
 function beginTransferPaymentPolling(orderId) {
