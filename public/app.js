@@ -481,7 +481,12 @@ async function runConfirmDelete() {
 }
 
 async function api(url, opt = {}) {
-  const r = await fetch(url, { credentials: 'same-origin', ...opt });
+  const options = { credentials: 'same-origin', ...opt };
+  const savedToken = localStorage.getItem('mindset_auth_token');
+  if (savedToken) {
+    options.headers = { ...(options.headers || {}), Authorization: `Bearer ${savedToken}` };
+  }
+  const r = await fetch(url, options);
   let d = {};
   try { d = await r.json(); } catch {}
   if (!r.ok) throw new Error(d.message || 'Có lỗi xảy ra');
@@ -529,12 +534,9 @@ async function boot({ animate = false } = {}) {
     const me = await api('/api/auth/me');
     state.user = me.user;
 
-    // Giữ trạng thái đã đăng nhập sau khi F5/reload.
-    // Cờ này chỉ dùng để khôi phục chế độ fullscreen ở lần tương tác đầu tiên
-    // vì trình duyệt không cho JavaScript tự bật fullscreen sau khi reload.
-    if (sessionStorage.getItem('mindset_fullscreen') === '1' && !document.fullscreenElement) {
-      window.__fullscreenRestorePending = true;
-    }
+    // Đã xác thực thành công: lưu thông tin phiên ở phía trình duyệt để F5
+    // vẫn khôi phục được POS ngay cả khi cookie bị trình duyệt/hosting bỏ qua.
+    localStorage.setItem('mindset_auth_user', JSON.stringify(me.user));
 
     // Chuẩn bị toàn bộ dữ liệu trước khi mở POS để không thấy màn hình trắng.
     await loadBase();
@@ -1785,9 +1787,9 @@ async function exitAppFullscreen() {
 }
 
 async function logout() {
-  sessionStorage.removeItem('mindset_fullscreen');
-  window.__fullscreenRestorePending = false;
   await api('/api/auth/logout',{method:'POST'}).catch(()=>{});
+  localStorage.removeItem('mindset_auth_token');
+  localStorage.removeItem('mindset_auth_user');
   await exitAppFullscreen();
   location.reload();
 }
@@ -1811,8 +1813,6 @@ function closePowerMenu(){
 
 function reloadApp(){
   closePowerMenu();
-  // Ghi nhớ rằng người dùng đang ở chế độ fullscreen để sau F5 có thể khôi phục.
-  if (document.fullscreenElement) sessionStorage.setItem('mindset_fullscreen','1');
   location.reload();
 }
 
@@ -1837,10 +1837,9 @@ $('#loginForm').addEventListener('submit', async e => {
   // Gọi ngay trong thao tác click/submit của người dùng để trình duyệt
   // cho phép vào fullscreen. Nếu đăng nhập thất bại, thoát fullscreen lại.
   const fullscreenStarted = await enterAppFullscreen();
-  if (fullscreenStarted) sessionStorage.setItem('mindset_fullscreen','1');
 
   try {
-    await api('/api/auth/login',{
+    const loginResult = await api('/api/auth/login',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -1848,6 +1847,15 @@ $('#loginForm').addEventListener('submit', async e => {
         password:$('#loginPass').value
       })
     });
+
+    // Lưu JWT làm phương án dự phòng cho cookie. Khi F5, api() sẽ gửi token này
+    // qua Authorization nên phiên đăng nhập không bị mất.
+    if (loginResult.token) {
+      localStorage.setItem('mindset_auth_token', loginResult.token);
+    }
+    if (loginResult.user) {
+      localStorage.setItem('mindset_auth_user', JSON.stringify(loginResult.user));
+    }
 
     // Chỉ sau khi đăng nhập thành công mới chạy transition sang POS.
     await boot({ animate:true });
@@ -1862,19 +1870,6 @@ $('#loginForm').addEventListener('submit', async e => {
 $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='password'?'text':'password'; $('#togglePass').textContent=i.type==='password'?'Hiện':'Ẩn'; };
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
-
-// Khôi phục fullscreen sau F5/reload. Browser bắt buộc requestFullscreen() phải
-// xuất phát từ một thao tác của người dùng, nên ta khôi phục ngay ở click/touch/key đầu tiên.
-function restoreFullscreenAfterReload() {
-  if (!window.__fullscreenRestorePending || document.fullscreenElement) return;
-  window.__fullscreenRestorePending = false;
-  enterAppFullscreen().then(ok => {
-    if (ok) sessionStorage.setItem('mindset_fullscreen','1');
-  });
-}
-['pointerdown','keydown','touchstart'].forEach(type => {
-  document.addEventListener(type, restoreFullscreenAfterReload, { once: true, capture: true });
-});
 
 Object.assign(window,{go,logout,togglePowerMenu,closePowerMenu,reloadApp,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();
