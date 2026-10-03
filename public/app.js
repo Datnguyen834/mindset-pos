@@ -13,7 +13,8 @@ let state = {
   page: 'pos',
   paymentMethod: 'cash',
   userList: null,
-  settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false, discountSettings: false }
+  settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false, discountSettings: false },
+  checkoutCustomer: { customer: null, redeem: false }
 };
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
@@ -814,6 +815,23 @@ function cartDiscountInfo(subtotal = cartSubtotal()) {
   return { percent, amount, total: subtotal - amount };
 }
 
+const CUSTOMER_POINT_EARN_VALUE = 20000;
+const CUSTOMER_POINT_DISCOUNT_VALUE = 1000;
+function checkoutDiscountInfo(subtotal = cartSubtotal()) {
+  const base = cartDiscountInfo(subtotal);
+  const customer = state.checkoutCustomer?.customer;
+  const points = customer && state.checkoutCustomer?.redeem ? Number(customer.points || 0) : 0;
+  const pointsUsed = Math.min(points, Math.floor(base.total / CUSTOMER_POINT_DISCOUNT_VALUE));
+  const pointsDiscount = pointsUsed * CUSTOMER_POINT_DISCOUNT_VALUE;
+  return {
+    ...base,
+    pointsUsed,
+    pointsDiscount,
+    total: Math.max(0, base.total - pointsDiscount),
+    amount: base.amount + pointsDiscount
+  };
+}
+
 function toppingText(x) {
   const tops = x.toppings.length ? x.toppings.map(t => `${esc(t.name)}${t.quantity > 1 ? ` x${t.quantity}` : ''}`).join(', ') : 'Không topping';
   return `${tops} · Đường ${x.sugarPercent}% · Đá ${x.icePercent}%`;
@@ -925,13 +943,91 @@ function syncPaymentUI() {
 
 async function checkout() {
   if (!state.cart.length) return toast('Hãy chọn ít nhất một món', true);
-  const info = cartDiscountInfo();
+  state.checkoutCustomer = { customer: null, redeem: false };
+  openCustomerLoyaltyModal();
+}
+
+function skipCustomerAndContinue() {
+  state.checkoutCustomer = { customer: null, redeem: false };
+  continueCheckoutAfterLoyalty();
+}
+
+function continueCheckoutAfterLoyalty() {
+  const info = checkoutDiscountInfo();
   if (state.paymentMethod === 'transfer') {
     if (!state.qr) return toast('Admin chưa upload QR chuyển khoản', true);
-    openModal(`<h3>Quét QR chuyển khoản</h3><p class="muted">Khách quét mã, kiểm tra giao dịch rồi bấm xác nhận.</p><img class="checkout-qr" src="${state.qr}" alt="QR chuyển khoản"><div class="cash-summary single"><div><span>Tổng bill</span><b>${money(info.total)}</b></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('transfer')">Thanh toán thành công</button></div>`);
+    openModal(`<div class="checkout-loyalty-summary"><div class="eyebrow">Thanh toán</div><h3>Quét QR chuyển khoản</h3><p class="muted">Khách quét mã, kiểm tra giao dịch rồi bấm xác nhận.</p><img class="checkout-qr" src="${state.qr}" alt="QR chuyển khoản"><div class="cash-summary"><div><span>Tổng bill</span><b>${money(info.total)}</b></div><div><span>Discount tự động</span><b>-${money(info.amount - info.pointsDiscount)}</b></div><div><span>Điểm khách hàng</span><b>-${money(info.pointsDiscount)}</b></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('transfer')">Thanh toán thành công</button></div></div>`);
   } else {
     openCashPaymentModal();
   }
+}
+
+async function searchCustomerForCheckout() {
+  const input = $('#customerPhone');
+  const phone = String(input?.value || '').replace(/\D/g, '');
+  if (!phone) return toast('Nhập số điện thoại khách hàng', true);
+  try {
+    const d = await api(`/api/customers/search?phone=${encodeURIComponent(phone)}`);
+    if (d.customer) {
+      state.checkoutCustomer = { customer: d.customer, redeem: false };
+      renderCustomerFoundModal();
+    } else {
+      renderCustomerNotFoundModal(phone);
+    }
+  } catch (e) { toast(e.message || 'Không tìm thấy khách hàng', true); }
+}
+
+function openCustomerLoyaltyModal() {
+  openModal(`<div class="customer-loyalty-modal">
+    <div class="customer-modal-head"><div><span class="eyebrow">Khách hàng</span><h3>Tích điểm</h3><p class="muted">Mua 20.000đ = 1 điểm · 1 điểm giảm 1.000đ. Tìm số điện thoại để dùng hoặc tích điểm.</p></div><button class="modal-close-x" type="button" onclick="skipCustomerAndContinue()">×</button></div>
+    <div class="customer-search-row"><input id="customerPhone" inputmode="numeric" maxlength="15" placeholder="Nhập số điện thoại khách" onkeydown="if(event.key==='Enter')searchCustomerForCheckout()"><button class="btn primary" onclick="searchCustomerForCheckout()">Tìm khách</button></div>
+    <button type="button" class="btn customer-skip-btn" onclick="skipCustomerAndContinue()">Bỏ qua, không tích điểm</button>
+  </div>`);
+}
+
+function renderCustomerFoundModal() {
+  const c = state.checkoutCustomer.customer;
+  const possiblePoints = Math.min(Number(c.points || 0), Math.floor(cartDiscountInfo().total / CUSTOMER_POINT_DISCOUNT_VALUE));
+  const possibleDiscount = possiblePoints * CUSTOMER_POINT_DISCOUNT_VALUE;
+  const afterPoints = Math.max(0, cartDiscountInfo().total - possibleDiscount);
+  openModal(`<div class="customer-loyalty-modal">
+    <div class="customer-modal-head"><div><span class="eyebrow">Khách hàng</span><h3>${esc(c.fullName)}</h3><p class="muted">${esc(c.phone)}</p></div><button class="modal-close-x" type="button" onclick="skipCustomerAndContinue()">×</button></div>
+    <div class="customer-point-card"><div><span>Số điểm hiện có</span><strong>${Number(c.points || 0)} điểm</strong></div><div><span>Giá trị điểm</span><strong>${money(Number(c.points || 0) * CUSTOMER_POINT_DISCOUNT_VALUE)}</strong></div></div>
+    <p class="customer-question">Khách có muốn trừ điểm cho hóa đơn này không?</p>
+    ${Number(c.points || 0) > 0 ? `<button type="button" class="customer-choice redeem" onclick="chooseCustomerOption(true)"><span>Trừ mặc định ${possiblePoints} điểm</span><b>Giảm ${money(possibleDiscount)} → Còn ${money(afterPoints)}</b><small>Hệ thống tự trừ số điểm tối đa: min(điểm hiện có, giá trị hóa đơn)</small></button>` : '<div class="customer-empty-points">Khách chưa có điểm. Hóa đơn này sẽ được cộng điểm sau khi thanh toán.</div>'}
+    <button type="button" class="customer-choice" onclick="chooseCustomerOption(false)"><span>Không trừ điểm</span><b>Tích thêm ${Math.floor(cartDiscountInfo().total / CUSTOMER_POINT_EARN_VALUE)} điểm sau thanh toán</b></button>
+  </div>`);
+}
+
+function chooseCustomerOption(redeem) {
+  state.checkoutCustomer.redeem = !!redeem;
+  continueCheckoutAfterLoyalty();
+}
+
+function renderCustomerNotFoundModal(phone) {
+  openModal(`<div class="customer-loyalty-modal">
+    <div class="customer-modal-head"><div><span class="eyebrow">Khách hàng</span><h3>Chưa có tài khoản</h3><p class="muted">Số ${esc(phone)} chưa được đăng ký.</p></div><button class="modal-close-x" type="button" onclick="skipCustomerAndContinue()">×</button></div>
+    <div class="customer-not-found"><strong>Không tìm thấy khách hàng.</strong><span>Bạn có muốn tạo tài khoản mới để bắt đầu tích điểm không?</span></div>
+    <div class="modal-actions"><button class="btn" onclick="skipCustomerAndContinue()">Không, bỏ qua</button><button class="btn primary" onclick="showCreateCustomerForm('${esc(phone)}')">Có, tạo tài khoản</button></div>
+  </div>`);
+}
+
+function showCreateCustomerForm(phone) {
+  openModal(`<div class="customer-loyalty-modal">
+    <div class="customer-modal-head"><div><span class="eyebrow">Khách hàng mới</span><h3>Tạo tài khoản</h3><p class="muted">Số điện thoại: ${esc(phone)}</p></div><button class="modal-close-x" type="button" onclick="skipCustomerAndContinue()">×</button></div>
+    <label class="customer-name-label">Họ tên khách hàng<input id="newCustomerName" autocomplete="name" placeholder="Nhập họ tên"></label>
+    <div class="modal-actions"><button class="btn" onclick="renderCustomerNotFoundModal('${esc(phone)}')">Quay lại</button><button class="btn primary" onclick="createCustomerAndContinue('${esc(phone)}')">Tạo tài khoản</button></div>
+  </div>`);
+}
+
+async function createCustomerAndContinue(phone) {
+  const fullName = String($('#newCustomerName')?.value || '').trim();
+  if (!fullName) return toast('Nhập họ tên khách hàng', true);
+  try {
+    const d = await api('/api/customers', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({phone,fullName})});
+    state.checkoutCustomer = { customer: d.customer, redeem: false };
+    continueCheckoutAfterLoyalty();
+  } catch (e) { toast(e.message || 'Không tạo được tài khoản', true); }
 }
 
 const CASH_DENOMINATIONS = [500000,200000,100000,50000,20000,10000,5000,2000,1000];
@@ -942,12 +1038,9 @@ function cashReceived() {
 }
 
 function changeCashDenomination(value, delta = 1) {
-  const info = cartDiscountInfo();
+  const info = checkoutDiscountInfo();
   const received = cashReceived();
-
-  // Khi đã đủ hoặc dư bill thì khóa toàn bộ thao tác cộng thêm.
   if (received >= info.total) return;
-
   const current = Number(cashPaymentState.counts[value] || 0);
   cashPaymentState.counts[value] = Math.max(0, current + Math.max(0, delta));
   renderCashPaymentModal();
@@ -959,46 +1052,23 @@ function clearCashDenominations() {
 }
 
 function renderCashPaymentModal() {
-  const info = cartDiscountInfo();
+  const info = checkoutDiscountInfo();
   const received = cashReceived();
   const change = Math.max(0, received - info.total);
   const missing = Math.max(0, info.total - received);
   const rows = CASH_DENOMINATIONS.map(value => {
     const count = Number(cashPaymentState.counts[value] || 0);
     const locked = received >= info.total;
-    return `<button type="button" class="cash-denom ${locked ? 'cash-denom-locked' : ''}" onclick="changeCashDenomination(${value},1)" aria-disabled="${locked}" ${locked ? 'disabled' : ''}>
-      <span class="cash-denom-value">${money(value)}</span>
-      <span class="cash-denom-controls"><b>${count}</b><span class="cash-plus ${locked ? 'cash-plus-disabled' : ''}">+</span></span>
-    </button>`;
+    return `<button type="button" class="cash-denom ${locked ? 'cash-denom-locked' : ''}" onclick="changeCashDenomination(${value},1)" aria-disabled="${locked}" ${locked ? 'disabled' : ''}><span class="cash-denom-value">${money(value)}</span><span class="cash-denom-controls"><b>${count}</b><span class="cash-plus ${locked ? 'cash-plus-disabled' : ''}">+</span></span></button>`;
   }).join('');
-
-  const status = missing > 0
-    ? `<div class="cash-missing">Còn thiếu <b>${money(missing)}</b></div>`
-    : `<div class="cash-change">Tiền thối lại <b>${money(change)}</b></div>`;
-
-  openModal(`<div class="cash-payment-modal">
-    <div class="cash-payment-title"><div><span class="eyebrow">Thanh toán</span><h3>Tiền mặt</h3></div><div class="cash-total-badge">${money(info.total)}</div></div>
-    <div class="cash-summary">
-      <div><span>Tổng bill</span><b>${money(info.total)}</b></div>
-      <div><span>Tiền khách đưa</span><b id="cashReceivedDisplay">${money(received)}</b></div>
-      <div>${status}</div>
-    </div>
-    <div class="cash-denom-heading"><div class="cash-denom-title">Chọn mệnh giá khách đưa</div><button type="button" class="btn cash-clear-btn" onclick="clearCashDenominations()">Xóa đã chọn</button></div>
-    <div class="cash-denom-grid">${rows}</div>
-    <div class="cash-payment-footer">
-      <button class="btn" onclick="closeModal()">Hủy</button>
-      <button class="btn primary" ${received < info.total ? 'disabled' : ''} onclick="confirmCashPayment()">Xác nhận thanh toán</button>
-    </div>
-  </div>`);
+  const status = missing > 0 ? `<div class="cash-missing">Còn thiếu <b>${money(missing)}</b></div>` : `<div class="cash-change">Tiền thối lại <b>${money(change)}</b></div>`;
+  openModal(`<div class="cash-payment-modal"><div class="cash-payment-title"><div><span class="eyebrow">Thanh toán</span><h3>Tiền mặt</h3></div><div class="cash-total-badge">${money(info.total)}</div></div><div class="cash-summary"><div><span>Tổng bill</span><b>${money(info.total)}</b></div><div><span>Tiền khách đưa</span><b id="cashReceivedDisplay">${money(received)}</b></div><div>${status}</div></div><div class="cash-loyalty-line">${state.checkoutCustomer?.customer ? `Khách: <b>${esc(state.checkoutCustomer.customer.fullName)}</b>${state.checkoutCustomer.redeem ? ` · Trừ ${info.pointsUsed} điểm (-${money(info.pointsDiscount)})` : ''}` : 'Không tích điểm cho hóa đơn này'}</div><div class="cash-denom-heading"><div class="cash-denom-title">Chọn mệnh giá khách đưa</div><button type="button" class="btn cash-clear-btn" onclick="clearCashDenominations()">Xóa đã chọn</button></div><div class="cash-denom-grid">${rows}</div><div class="cash-payment-footer"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" ${received < info.total ? 'disabled' : ''} onclick="confirmCashPayment()">Xác nhận thanh toán</button></div></div>`);
 }
 
-function openCashPaymentModal() {
-  cashPaymentState = { counts: {} };
-  renderCashPaymentModal();
-}
+function openCashPaymentModal() { cashPaymentState = { counts: {} }; renderCashPaymentModal(); }
 
 async function confirmCashPayment() {
-  const total = cartDiscountInfo().total;
+  const total = checkoutDiscountInfo().total;
   const received = cashReceived();
   if (received < total) return toast(`Khách còn thiếu ${money(total - received)}`, true);
   await completePayment('cash', { received, change: received - total });
@@ -1006,26 +1076,24 @@ async function confirmCashPayment() {
 
 async function completePayment(method, cashMeta = null) {
   try {
-    const d = await api('/api/orders', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        items: state.cart.map(x => ({
-          menuItemId:x.menuItemId, quantity:x.quantity,
-          sugarPercent:x.sugarPercent, icePercent:x.icePercent,
-          toppings:x.toppings.map(t => ({id:t.id,quantity:t.quantity}))
-        })),
-        paymentMethod:method,
-        cashReceived: cashMeta?.received || null,
-        cashChange: cashMeta?.change || null
-      })
-    });
+    const d = await api('/api/orders', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      items: state.cart.map(x => ({menuItemId:x.menuItemId, quantity:x.quantity, sugarPercent:x.sugarPercent, icePercent:x.icePercent, toppings:x.toppings.map(t => ({id:t.id,quantity:t.quantity}))})),
+      paymentMethod:method,
+      cashReceived: cashMeta?.received || null,
+      cashChange: cashMeta?.change || null,
+      customerId: state.checkoutCustomer?.customer?.id || null,
+      redeemPoints: !!state.checkoutCustomer?.redeem
+    })});
+    const customerResult = d.customer ? `<div class="customer-success-summary"><span>Khách hàng</span><b>${esc(d.customer.fullName)}</b><span>Điểm hiện tại</span><b>${Number(d.customer.points || 0)} điểm</b>${d.pointsUsed ? `<span>Đã trừ</span><b>${d.pointsUsed} điểm (-${money(d.pointsDiscount)})</b>` : ''}${d.pointsEarned ? `<span>Tích thêm</span><b>+${d.pointsEarned} điểm</b>` : ''}</div>` : '';
     state.cart = [];
+    state.checkoutCustomer = {customer:null,redeem:false};
     closeModal();
     renderPOS();
-    openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.orderId}</b> · Discount <b>${d.discountPercent || 0}%</b> · Tổng tiền <b class="modal-total">${money(d.total)}</b></p>${method === 'cash' && cashMeta ? `<div class="cash-success-summary"><div><span>Tiền khách đưa</span><b>${money(cashMeta.received)}</b></div><div><span>Tiền thối lại</span><b>${money(cashMeta.change)}</b></div></div>` : ''}<p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.orderId})">In bill</button></div>`);
+    openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.orderId}</b> · Discount <b>${d.discountPercent || 0}%</b>${d.pointsDiscount ? ` · Điểm giảm <b>-${money(d.pointsDiscount)}</b>` : ''} · Tổng tiền <b class="modal-total">${money(d.total)}</b></p>${customerResult}${method === 'cash' && cashMeta ? `<div class="cash-success-summary"><div><span>Tiền khách đưa</span><b>${money(cashMeta.received)}</b></div><div><span>Tiền thối lại</span><b>${money(cashMeta.change)}</b></div></div>` : ''}<p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.orderId})">In bill</button></div>`);
     toast(`Đã thanh toán #${d.orderId} — ${money(d.total)}`);
   } catch (e) { toast(e.message, true); }
 }
+
 
 async function renderOrders() {
   $('#page').innerHTML = `<div class="content revenue-page">
@@ -1161,7 +1229,10 @@ window.setRevenueMode=setRevenueMode;
 window.loadStaffRevenue=loadStaffRevenue;
 async function printOrder(id) {
   const o = await api('/api/orders/' + id);
-  openModal(`<div class="invoice"><h1>Mindset</h1><p style="text-align:center">HÓA ĐƠN #${o.id}</p><p>${fmtDate(o.created_at)}<br>Nhân viên: ${esc(o.staff)}</p><table>${o.items.map(x => `<tr><td><strong>${esc(x.item_name)} x${x.quantity}</strong><br><small>Đường ${x.sugar_percent}% · Đá ${x.ice_percent}%<br>${x.toppings.map(t => esc(t.name)).join(', ') || 'Không topping'}</small></td><td class="r">${money(x.line_total)}</td></tr>`).join('')}</table><hr><div class="invoice-summary"><p class="r">Tạm tính: ${money(o.subtotal)}</p><p class="r">Discount${o.discount ? ` ${Math.round((Number(o.discount) / Math.max(1, Number(o.subtotal))) * 100)}%` : ''}: -${money(o.discount || 0)}</p><p class="r"><b>TỔNG: ${money(o.total)}</b></p></div><p style="text-align:center">Cảm ơn quý khách!</p></div><div class="modal-actions no-print"><button class="btn" onclick="window.print()">In</button><button class="btn" onclick="closeModal()">Đóng</button></div>`);
+  const customerLine = o.customer_id ? `<br>Khách hàng: ${esc(o.customer_name || 'Khách hàng')}${o.points_earned ? ` · +${o.points_earned} điểm` : ''}` : '';
+  const automaticDiscount = Number(o.automatic_discount || 0);
+  const pointsDiscount = Number(o.points_discount || 0);
+  openModal(`<div class="invoice"><h1>Mindset</h1><p style="text-align:center">HÓA ĐƠN #${o.id}</p><p>${fmtDate(o.created_at)}<br>Nhân viên: ${esc(o.staff)}${customerLine}</p><table>${o.items.map(x => `<tr><td><strong>${esc(x.item_name)} x${x.quantity}</strong><br><small>Đường ${x.sugar_percent}% · Đá ${x.ice_percent}%<br>${x.toppings.map(t => esc(t.name)).join(', ') || 'Không topping'}</small></td><td class="r">${money(x.line_total)}</td></tr>`).join('')}</table><hr><div class="invoice-summary"><p class="r">Tạm tính: ${money(o.subtotal)}</p><p class="r">Discount${automaticDiscount ? ` ${Math.round((automaticDiscount / Math.max(1, Number(o.subtotal))) * 100)}%` : ''}: -${money(automaticDiscount)}</p>${pointsDiscount ? `<p class="r">Trừ điểm: -${money(pointsDiscount)}</p>` : ''}<p class="r"><b>TỔNG: ${money(o.total)}</b></p></div><p style="text-align:center">Cảm ơn quý khách!</p></div><div class="modal-actions no-print"><button class="btn" onclick="window.print()">In</button><button class="btn" onclick="closeModal()">Đóng</button></div>`);
 }
 
 function renderUsersTable(users) {
@@ -1637,5 +1708,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();

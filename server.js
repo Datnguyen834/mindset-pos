@@ -113,8 +113,34 @@ app.get('/api/toppings',auth,async(req,res)=>{ const r=await q('SELECT id,name,p
 app.get('/api/settings/qr',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='payment_qr'"); res.json({image:r.rows[0]?.value||''}); });
 app.get('/api/settings/discount-rules',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{ rules=JSON.parse(r.rows[0]?.value||'[]'); }catch{} res.json({rules:Array.isArray(rules)?rules:[]}); });
 
+
+const POINT_EARN_VALUE = 20000;
+const POINT_DISCOUNT_VALUE = 1000;
+function normalizePhone(value) { return String(value || '').replace(/\D/g, '').slice(0, 15); }
+
+app.get('/api/customers/search', auth, async (req,res)=>{
+  const phone = normalizePhone(req.query.phone);
+  if (!phone) return res.status(400).json({message:'Nhập số điện thoại'});
+  const r = await q('SELECT id,phone,full_name AS "fullName",points FROM customers WHERE phone=$1 LIMIT 1',[phone]);
+  res.json({customer: r.rows[0] || null});
+});
+
+app.post('/api/customers', auth, async (req,res)=>{
+  const phone = normalizePhone(req.body.phone);
+  const fullName = String(req.body.fullName || '').trim();
+  if (!phone || phone.length < 9) return res.status(400).json({message:'Số điện thoại không hợp lệ'});
+  if (!fullName) return res.status(400).json({message:'Nhập họ tên khách hàng'});
+  try {
+    const r = await q('INSERT INTO customers(phone,full_name) VALUES($1,$2) RETURNING id,phone,full_name AS "fullName",points',[phone,fullName]);
+    res.json({customer:r.rows[0]});
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({message:'Số điện thoại này đã có tài khoản'});
+    res.status(400).json({message:'Không tạo được tài khoản khách hàng'});
+  }
+});
+
 app.post('/api/orders',auth,async(req,res)=>{
-  const {items,paymentMethod}=req.body;
+  const {items,paymentMethod,customerId=null,redeemPoints=false}=req.body;
   if(!Array.isArray(items)||!items.length) return res.status(400).json({message:'Giỏ hàng trống'});
   if(!['cash','transfer'].includes(paymentMethod)) return res.status(400).json({message:'Phương thức thanh toán không hợp lệ'});
   const client=await pool.connect();
@@ -134,6 +160,8 @@ app.post('/api/orders',auth,async(req,res)=>{
       }
       const line=(Number(m.price)+topTotal)*qty; subtotal+=line; normalized.push({m,qty,tops,line,sugarPercent:Math.min(100,Math.max(0,money(item.sugarPercent ?? 100))),icePercent:Math.min(100,Math.max(0,money(item.icePercent ?? 100)))});
     }
+
+    // Discount tự động theo cấu hình Admin.
     const setting=await client.query("SELECT value FROM settings WHERE key='discount_rules'");
     let rules=[];
     try{ rules=JSON.parse(setting.rows[0]?.value||'[]'); }catch{}
@@ -141,15 +169,44 @@ app.post('/api/orders',auth,async(req,res)=>{
     rules.sort((a,b)=>b.threshold-a.threshold);
     const matchedRule=rules.find(r=>subtotal>=r.threshold);
     const discountPercent=matchedRule?.percent||0;
-    const disc=Math.min(subtotal,Math.round(subtotal*discountPercent/100));
-    const total=subtotal-disc;
-    const order=await client.query(`INSERT INTO orders(user_id,shift_id,payment_method,subtotal,discount,total,status) VALUES($1,$2,$3,$4,$5,$6,'paid') RETURNING *`,[req.user.id,shiftId,paymentMethod,subtotal,disc,total]);
+    const automaticDiscount=Math.min(subtotal,Math.round(subtotal*discountPercent/100));
+    const afterAutomatic=Math.max(0,subtotal-automaticDiscount);
+
+    // Tích điểm khách hàng: mua 20.000đ = 1 điểm; 1 điểm giảm 1.000đ.
+    // Nếu khách chọn trừ điểm, chỉ dùng số điểm cần thiết để không làm tổng hóa đơn âm.
+    let customer = null;
+    let pointsUsed = 0;
+    let pointsEarned = 0;
+    let pointsDiscount = 0;
+    if(customerId){
+      const cr=await client.query('SELECT id,phone,full_name AS "fullName",points FROM customers WHERE id=$1 FOR UPDATE',[customerId]);
+      if(!cr.rowCount) throw new Error('Không tìm thấy tài khoản khách hàng');
+      customer=cr.rows[0];
+      if(redeemPoints){
+        pointsUsed=Math.min(Number(customer.points)||0, Math.floor(afterAutomatic/POINT_DISCOUNT_VALUE));
+        pointsDiscount=pointsUsed*POINT_DISCOUNT_VALUE;
+      }
+    }
+
+    const total=Math.max(0,afterAutomatic-pointsDiscount);
+    if(customer && !redeemPoints){
+      pointsEarned=Math.floor(total/POINT_EARN_VALUE);
+    }
+
+    const order=await client.query(`INSERT INTO orders(user_id,shift_id,customer_id,payment_method,subtotal,discount,automatic_discount,points_discount,points_used,points_earned,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'paid') RETURNING *`,[req.user.id,shiftId,customer?.id || null,paymentMethod,subtotal,automaticDiscount+pointsDiscount,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,total]);
     for(const x of normalized){
       const oi=await client.query(`INSERT INTO order_items(order_id,menu_item_id,item_name,unit_price,quantity,line_total,sugar_percent,ice_percent) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[order.rows[0].id,x.m.id,x.m.name,x.m.price,x.qty,x.line,x.sugarPercent,x.icePercent]);
       for(const t of x.tops) await client.query(`INSERT INTO order_item_toppings(order_item_id,topping_id,topping_name,topping_price,quantity) VALUES($1,$2,$3,$4,$5)`,[oi.rows[0].id,t.id,t.name,t.price,t.quantity]);
     }
+
+    if(customer){
+      const newPoints = Math.max(0, Number(customer.points||0) - pointsUsed + pointsEarned);
+      await client.query('UPDATE customers SET points=$1,updated_at=NOW() WHERE id=$2',[newPoints,customer.id]);
+      customer.points=newPoints;
+    }
+
     await client.query('COMMIT');
-    res.json({orderId:order.rows[0].id,total,subtotal,discount:disc,discountPercent});
+    res.json({orderId:order.rows[0].id,total,subtotal,discount:automaticDiscount+pointsDiscount,discountPercent,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,customer:customer?{id:customer.id,fullName:customer.fullName,points:customer.points}:null});
   }catch(e){await client.query('ROLLBACK');res.status(400).json({message:e.message||'Không tạo được đơn'});}finally{client.release();}
 });
 
@@ -238,7 +295,7 @@ app.get('/api/admin/orders/all',auth,adminOnly,async(req,res)=>{
 });
 
 app.get('/api/orders/:id',auth,async(req,res)=>{
-  const o=await q(`SELECT o.*,u.full_name AS staff FROM orders o JOIN users u ON u.id=o.user_id WHERE o.id=$1`,[req.params.id]);
+  const o=await q(`SELECT o.*,u.full_name AS staff,c.full_name AS customer_name FROM orders o JOIN users u ON u.id=o.user_id LEFT JOIN customers c ON c.id=o.customer_id WHERE o.id=$1`,[req.params.id]);
   if(!o.rowCount)return res.status(404).json({message:'Không tìm thấy hóa đơn'});
   const items=await q(`SELECT oi.*,COALESCE(json_agg(json_build_object('name',oit.topping_name,'price',oit.topping_price,'quantity',oit.quantity)) FILTER (WHERE oit.id IS NOT NULL),'[]') toppings FROM order_items oi LEFT JOIN order_item_toppings oit ON oit.order_item_id=oi.id WHERE oi.order_id=$1 GROUP BY oi.id ORDER BY oi.id`,[req.params.id]);
   res.json({...o.rows[0],items:items.rows});

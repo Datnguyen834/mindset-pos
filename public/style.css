@@ -1082,3 +1082,34 @@ body.modal-open { overflow: hidden; }
   opacity: .35;
   cursor: not-allowed;
 }
+
+
+/* Customer loyalty / tích điểm */
+.customer-loyalty-modal{padding:4px 2px 0}
+.customer-modal-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}
+.customer-modal-head h3{margin:3px 0 5px;font-size:24px}
+.modal-close-x{border:0;background:transparent;font-size:30px;line-height:1;color:#6b746f;cursor:pointer;padding:0 4px}
+.modal-close-x:hover{color:var(--green)}
+.customer-search-row{display:grid;grid-template-columns:1fr auto;gap:9px;margin-bottom:12px}
+.customer-search-row input,.customer-name-label input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff;box-sizing:border-box}
+.customer-name-label{display:grid;gap:7px;font-weight:800;margin-top:8px}
+.customer-skip-btn{width:100%;margin-top:4px}
+.customer-point-card{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.customer-point-card>div{border:1px solid var(--line);border-radius:11px;background:#f8fbf9;padding:13px;display:flex;flex-direction:column;gap:4px}
+.customer-point-card span{font-size:12px;color:var(--muted);font-weight:700}
+.customer-point-card strong{font-size:18px;color:var(--green)}
+.customer-question{font-weight:900;margin:14px 0 9px}
+.customer-choice{width:100%;display:flex;justify-content:space-between;align-items:center;gap:14px;text-align:left;border:1px solid var(--line);background:#fff;border-radius:11px;padding:13px 14px;margin-top:9px;cursor:pointer;font:inherit}
+.customer-choice:hover{border-color:var(--green);background:#f6faf8}
+.customer-choice span{font-weight:900;color:var(--text)}
+.customer-choice b{font-size:12px;color:var(--green);text-align:right}
+.customer-choice.redeem{border-color:#bfd5ca;background:#f3f9f6}
+.customer-empty-points,.customer-not-found{border:1px dashed #cbd8d1;background:#f8faf9;border-radius:11px;padding:13px;margin:10px 0;color:#53605a}
+.customer-not-found{display:flex;flex-direction:column;gap:5px}
+.cash-loyalty-line{font-size:12px;color:var(--muted);background:#f7faf8;border-radius:9px;padding:9px 11px;margin:0 0 10px}
+.customer-success-summary{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:14px auto;max-width:420px;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fafcfb;text-align:left}
+.customer-success-summary span{font-size:12px;color:var(--muted)}
+.customer-success-summary b{font-size:14px;color:var(--green)}
+.checkout-loyalty-summary .cash-summary{margin-top:12px}
+@media(max-width:620px){.customer-search-row{grid-template-columns:1fr}.customer-point-card{grid-template-columns:1fr}.customer-choice{flex-direction:column;align-items:flex-start}.customer-choice b{text-align:left}}
+.customer-choice small{display:block;margin-top:5px;font-size:12px;font-weight:500;opacity:.72}
