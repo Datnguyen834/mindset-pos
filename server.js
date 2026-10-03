@@ -7,12 +7,14 @@ import pg from 'pg';
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
+import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { PayOS } from '@payos/node';
 
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false });
