@@ -597,12 +597,12 @@ function productOptionsHtml(itemIndex = 'new', existing = {}) {
   return `
     <div class="custom-grid">
       <label>% Đường
-        <select id="sugarPercent">
+        <select id="sugarPercent" onchange="updateProductModalPrice()">
           ${[0,30,50,70,100].map(v => `<option value="${v}" ${v === sugar ? 'selected' : ''}>${v}%</option>`).join('')}
         </select>
       </label>
       <label>% Đá
-        <select id="icePercent">
+        <select id="icePercent" onchange="updateProductModalPrice()">
           ${[0,30,50,70,100].map(v => `<option value="${v}" ${v === ice ? 'selected' : ''}>${v}%</option>`).join('')}
         </select>
       </label>
@@ -695,6 +695,15 @@ function animateProductToCart(imageSrc, sourceEl = null) {
   });
 }
 
+function updateProductModalPrice() {
+  const priceNode = $('#modalProductPrice');
+  const d = window.__productDraft;
+  if (!priceNode || !d) return;
+  const base = Number(priceNode.dataset.basePrice || 0);
+  const toppingTotal = (d.toppings || []).reduce((sum, t) => sum + Number(t.price || 0) * Number(t.quantity || 0), 0);
+  priceNode.textContent = money(base + toppingTotal);
+}
+
 function openProduct(id, sourceEl = null) {
   const m = state.menu.find(x => x.id === id);
   if (!m) return;
@@ -721,7 +730,7 @@ function openProduct(id, sourceEl = null) {
   const temp = { toppings: [], sugarPercent: 100, icePercent: 100 };
   window.__productDraft = temp;
   openModal(`
-    <div class="product-modal-head"><img src="${m.image || '/assets/logo.png'}"><div><div class="eyebrow">${esc(m.category)}</div><h3>${esc(m.name)}</h3><strong class="modal-price">${money(m.price)}</strong></div></div>
+    <div class="product-modal-head"><img src="${m.image || '/assets/logo.png'}"><div><div class="eyebrow">${esc(m.category)}</div><h3>${esc(m.name)}</h3><strong class="modal-price" id="modalProductPrice" data-base-price="${Number(m.price)}">${money(m.price)}</strong></div></div>
     ${productOptionsHtml('new', temp)}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="addConfiguredProduct(${m.id})">Thêm vào đơn</button></div>`);
 }
@@ -812,7 +821,7 @@ function editCartItem(i) {
   window.__editIndex = i;
   window.__productDraft = { sugarPercent: x.sugarPercent, icePercent: x.icePercent, toppings: x.toppings.map(t => ({...t})) };
   openModal(`
-    <div class="product-modal-head"><img src="${x.image || '/assets/logo.png'}"><div><div class="eyebrow">Tùy chỉnh món</div><h3>${esc(x.name)}</h3><strong class="modal-price">${money(x.price)}</strong></div></div>
+    <div class="product-modal-head"><img src="${x.image || '/assets/logo.png'}"><div><div class="eyebrow">Tùy chỉnh món</div><h3>${esc(x.name)}</h3><strong class="modal-price" id="modalProductPrice" data-base-price="${Number(x.price)}">${money(x.price + (x.toppings || []).reduce((a,t)=>a+Number(t.price||0)*Number(t.quantity||0),0))}</strong></div></div>
     ${productOptionsHtml(i, window.__productDraft)}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="saveCartItem(${i})">Lưu thay đổi</button></div>`);
 }
@@ -837,7 +846,9 @@ function adjustTopModal(index, id, d) {
   const q = draf.toppings.find(z => Number(z.id) === numericId)?.quantity || 0;
   const node = document.getElementById(`top-q-${String(index)}-${numericId}`);
   if (node) node.textContent = q;
+  updateProductModalPrice();
 }
+
 
 function saveCartItem(i) {
   const x = state.cart[i];
@@ -866,15 +877,74 @@ function syncPaymentUI() {
 
 async function checkout() {
   if (!state.cart.length) return toast('Hãy chọn ít nhất một món', true);
+  const info = cartDiscountInfo();
   if (state.paymentMethod === 'transfer') {
     if (!state.qr) return toast('Admin chưa upload QR chuyển khoản', true);
-    openModal(`<h3>Quét QR chuyển khoản</h3><p class="muted">Khách quét mã, kiểm tra giao dịch rồi bấm xác nhận.</p><img class="checkout-qr" src="${state.qr}" alt="QR chuyển khoản"><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('transfer')">Thanh toán thành công</button></div>`);
+    openModal(`<h3>Quét QR chuyển khoản</h3><p class="muted">Khách quét mã, kiểm tra giao dịch rồi bấm xác nhận.</p><img class="checkout-qr" src="${state.qr}" alt="QR chuyển khoản"><div class="cash-summary single"><div><span>Tổng bill</span><b>${money(info.total)}</b></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('transfer')">Thanh toán thành công</button></div>`);
   } else {
-    openModal(`<div class="success"><div class="check">💵</div><h3>Xác nhận thanh toán tiền mặt</h3><p>Tổng tiền sau discount: <b class="modal-total">${money(cartDiscountInfo().total)}</b></p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('cash')">Xác nhận thanh toán</button></div>`);
+    openCashPaymentModal();
   }
 }
 
-async function completePayment(method) {
+const CASH_DENOMINATIONS = [500000,200000,100000,50000,20000,10000,5000,2000,1000];
+let cashPaymentState = { counts: {} };
+
+function cashReceived() {
+  return CASH_DENOMINATIONS.reduce((sum, value) => sum + value * Number(cashPaymentState.counts[value] || 0), 0);
+}
+
+function changeCashDenomination(value, delta) {
+  const current = Number(cashPaymentState.counts[value] || 0);
+  cashPaymentState.counts[value] = Math.max(0, current + delta);
+  renderCashPaymentModal();
+}
+
+function renderCashPaymentModal() {
+  const info = cartDiscountInfo();
+  const received = cashReceived();
+  const change = Math.max(0, received - info.total);
+  const missing = Math.max(0, info.total - received);
+  const rows = CASH_DENOMINATIONS.map(value => {
+    const count = Number(cashPaymentState.counts[value] || 0);
+    return `<button type="button" class="cash-denom" onclick="changeCashDenomination(${value},1)">
+      <span class="cash-denom-value">${money(value)}</span>
+      <span class="cash-denom-controls"><span class="cash-minus" onclick="event.stopPropagation();changeCashDenomination(${value},-1)">−</span><b>${count}</b><span class="cash-plus">+</span></span>
+    </button>`;
+  }).join('');
+
+  const status = missing > 0
+    ? `<div class="cash-missing">Còn thiếu <b>${money(missing)}</b></div>`
+    : `<div class="cash-change">Tiền thối lại <b>${money(change)}</b></div>`;
+
+  openModal(`<div class="cash-payment-modal">
+    <div class="cash-payment-title"><div><span class="eyebrow">Thanh toán</span><h3>Tiền mặt</h3></div><div class="cash-total-badge">${money(info.total)}</div></div>
+    <div class="cash-summary">
+      <div><span>Tổng bill</span><b>${money(info.total)}</b></div>
+      <div><span>Tiền khách đưa</span><b id="cashReceivedDisplay">${money(received)}</b></div>
+      <div>${status}</div>
+    </div>
+    <div class="cash-denom-title">Chọn mệnh giá khách đưa</div>
+    <div class="cash-denom-grid">${rows}</div>
+    <div class="cash-payment-footer">
+      <button class="btn" onclick="closeModal()">Hủy</button>
+      <button class="btn primary" ${received < info.total ? 'disabled' : ''} onclick="confirmCashPayment()">Xác nhận thanh toán</button>
+    </div>
+  </div>`);
+}
+
+function openCashPaymentModal() {
+  cashPaymentState = { counts: {} };
+  renderCashPaymentModal();
+}
+
+async function confirmCashPayment() {
+  const total = cartDiscountInfo().total;
+  const received = cashReceived();
+  if (received < total) return toast(`Khách còn thiếu ${money(total - received)}`, true);
+  await completePayment('cash', { received, change: received - total });
+}
+
+async function completePayment(method, cashMeta = null) {
   try {
     const d = await api('/api/orders', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -884,13 +954,15 @@ async function completePayment(method) {
           sugarPercent:x.sugarPercent, icePercent:x.icePercent,
           toppings:x.toppings.map(t => ({id:t.id,quantity:t.quantity}))
         })),
-        paymentMethod:method
+        paymentMethod:method,
+        cashReceived: cashMeta?.received || null,
+        cashChange: cashMeta?.change || null
       })
     });
     state.cart = [];
     closeModal();
     renderPOS();
-    openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.orderId}</b> · Discount <b>${d.discountPercent || 0}%</b> · Tổng tiền <b class="modal-total">${money(d.total)}</b></p><p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.orderId})">In bill</button></div>`);
+    openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.orderId}</b> · Discount <b>${d.discountPercent || 0}%</b> · Tổng tiền <b class="modal-total">${money(d.total)}</b></p>${method === 'cash' && cashMeta ? `<div class="cash-success-summary"><div><span>Tiền khách đưa</span><b>${money(cashMeta.received)}</b></div><div><span>Tiền thối lại</span><b>${money(cashMeta.change)}</b></div></div>` : ''}<p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.orderId})">In bill</button></div>`);
     toast(`Đã thanh toán #${d.orderId} — ${money(d.total)}`);
   } catch (e) { toast(e.message, true); }
 }
@@ -1505,5 +1577,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();
