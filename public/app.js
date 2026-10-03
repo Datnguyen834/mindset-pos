@@ -1116,14 +1116,23 @@ async function cancelTransferPayment() {
     transferPaymentPoll = null;
   }
   const orderId = transferPaymentOrderId;
-  transferPaymentOrderId = null;
-  closeModal();
-  if (orderId) {
-    try {
-      await api(`/api/payos/cancel-payment/${orderId}`, {method:'POST'});
-    } catch (e) {
-      console.warn('Không hủy được đơn chờ payOS:', e);
-    }
+  if (!orderId) {
+    transferPaymentOrderId = null;
+    closeModal();
+    return;
+  }
+
+  // Chỉ đóng modal sau khi backend đã hủy payment link trên payOS.
+  // Như vậy QR cũ sẽ không còn là một yêu cầu thanh toán đang chờ.
+  try {
+    await api(`/api/payos/cancel-payment/${orderId}`, {method:'POST'});
+    transferPaymentOrderId = null;
+    closeModal();
+    toast(`Đã hủy thanh toán đơn #${orderId}`);
+  } catch (e) {
+    // Nếu hủy trên payOS thất bại, giữ modal để người dùng biết QR vẫn còn hiệu lực.
+    transferPaymentOrderId = orderId;
+    toast(e.message || 'Không thể hủy thanh toán trên payOS', true);
   }
 }
 

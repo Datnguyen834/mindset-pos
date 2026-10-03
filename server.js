@@ -462,13 +462,37 @@ app.post('/api/payos/create-payment', auth, async (req,res)=>{
 
 app.post('/api/payos/cancel-payment/:orderId', auth, async (req,res)=>{
   const orderId=Number(req.params.orderId);
-  if(!Number.isInteger(orderId)) return res.status(400).json({message:'Mã đơn không hợp lệ'});
+  if(!Number.isInteger(orderId) || orderId<=0) return res.status(400).json({message:'Mã đơn không hợp lệ'});
   try{
-    const r=await q(`UPDATE orders SET status='cancelled' WHERE id=$1 AND user_id=$2 AND payment_method='transfer' AND status='pending' RETURNING id`,[orderId,req.user.id]);
-    res.json({ok:true,cancelled:Boolean(r.rowCount)});
+    const r=await q(`SELECT id,status,payment_method FROM orders WHERE id=$1 AND user_id=$2 LIMIT 1`,[orderId,req.user.id]);
+    if(!r.rowCount) return res.status(404).json({message:'Không tìm thấy đơn hàng'});
+    const order=r.rows[0];
+    if(order.payment_method!=='transfer') return res.status(400).json({message:'Đơn này không phải thanh toán chuyển khoản'});
+    if(order.status==='cancelled') return res.json({ok:true,cancelled:true,payOSCancelled:true});
+    if(order.status==='paid') return res.status(409).json({message:'Đơn hàng đã thanh toán, không thể hủy'});
+    if(order.status!=='pending') return res.status(400).json({message:`Đơn hàng đang ở trạng thái ${order.status}`});
+    if(!payosConfigured || !payos) return res.status(503).json({message:'payOS chưa được cấu hình'});
+
+    // Hủy payment link trên payOS trước, sau đó mới đánh dấu đơn local là cancelled.
+    // payOS cho phép hủy theo orderCode nên không cần lưu paymentLinkId riêng.
+    let payOSResult;
+    try{
+      payOSResult=await payos.paymentRequests.cancel(orderId, 'Khách hàng hủy thanh toán');
+    }catch(cancelError){
+      console.error('payOS payment link cancel error:', cancelError);
+      return res.status(502).json({message:cancelError?.message || 'Không thể hủy thanh toán trên payOS'});
+    }
+
+    const updated=await q(`UPDATE orders SET status='cancelled' WHERE id=$1 AND user_id=$2 AND payment_method='transfer' AND status='pending' RETURNING id`,[orderId,req.user.id]);
+    if(!updated.rowCount){
+      // Nếu trạng thái local đã thay đổi trong lúc gọi payOS, vẫn báo payOS đã hủy.
+      const latest=await q(`SELECT status FROM orders WHERE id=$1 AND user_id=$2 LIMIT 1`,[orderId,req.user.id]);
+      return res.json({ok:true,cancelled:latest.rows[0]?.status==='cancelled',payOSCancelled:true,payOSStatus:payOSResult?.status||null});
+    }
+    res.json({ok:true,cancelled:true,payOSCancelled:true,payOSStatus:payOSResult?.status||null});
   }catch(e){
     console.error('payOS cancel payment error:',e);
-    res.status(500).json({message:'Không hủy được đơn thanh toán'});
+    res.status(500).json({message:e?.message || 'Không hủy được đơn thanh toán'});
   }
 });
 
