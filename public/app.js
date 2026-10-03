@@ -137,18 +137,19 @@ async function boot({ animate = false } = {}) {
 
 async function loadBase() {
   // Tải song song thay vì chờ từng request xong mới chạy request tiếp theo.
-  const [menu, categories, toppings, qr] = await Promise.all([
+  const [menu, categories, toppings, qr, discountRules] = await Promise.all([
     api('/api/menu'),
     api('/api/categories'),
     api('/api/toppings'),
-    api('/api/settings/qr')
+    api('/api/settings/qr'),
+    api('/api/settings/discount-rules')
   ]);
 
   state.menu = menu;
   state.categories = categories;
   state.toppings = toppings;
   state.qr = qr.image || '';
-   state.discountRules = Array.isArray(discountRules.rules) ? discountRules.rules : [];
+  state.discountRules = Array.isArray(discountRules.rules) ? discountRules.rules : [];
 }
 
 function renderPage() {
