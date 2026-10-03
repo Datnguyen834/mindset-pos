@@ -20,9 +20,9 @@ const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ
 
 
 // ==================== MÈO TƯƠNG TÁC TRÊN HEADER ====================
-// Sprite Kitty có 34 frame, mỗi frame 32x32:
-// idle R 2-9 | walk R 10-13 | jump R 14-15 | fall R 16-17
-// idle L 18-25 | walk L 26-29 | jump L 30-31 | fall L 32-33
+// Cat Sprite Sheet: 12 cột x 9 hàng, mỗi frame gốc 32x32.
+// Hàng 0 = idle, hàng 1 = walk, hàng 8 = jump/reaction.
+// Sprite mới chỉ có 1 hướng, nên khi đi sang trái ta flip bằng CSS.
 let catController = null;
 
 function initInteractiveCat() {
@@ -31,12 +31,20 @@ function initInteractiveCat() {
   if (!track || !cat) return;
   if (catController) return;
 
-  const W = 64;
-  const FRAME_MS = 105;
-  const WALK_SPEED = 52; // px/s
-  const WALK_FRAMES = { right:[10,11,12,13], left:[26,27,28,29] };
-  const IDLE_FRAMES = { right:[2,3,4,5,6,7,8,9], left:[18,19,20,21,22,23,24,25] };
-  const JUMP_FRAMES = { right:[14,15,16,17], left:[30,31,32,33] };
+  const FRAME = 32;
+  const W = 64; // kích thước hiển thị: 2x sprite gốc
+  const SCALE = W / FRAME;
+  const COLS = 12;
+  const ROWS = 9;
+  const FRAME_MS = 110;
+  const WALK_SPEED = 55;
+
+  // Các animation lấy trực tiếp từ sprite sheet mới.
+  const ANIM = {
+    idle: [0,1,2,3,4,5,6,7,8].map(c => [c,0]),
+    walk: [0,1,2,3,4,5,6,7,8,9,10].map(c => [c,1]),
+    reaction: [0,1,2,3,4,5].map(c => [c,8])
+  };
 
   let x = 0;
   let dir = 'right';
@@ -51,18 +59,18 @@ function initInteractiveCat() {
     return Math.max(0, track.clientWidth - W);
   }
 
+  function setDirectionClass() {
+    cat.classList.toggle('face-left', dir === 'left');
+  }
+
   function setFrame(frame) {
-    const scale = W / 32;
-    cat.style.backgroundPosition = `${-(frame * W)}px 0px`;
-    cat.style.backgroundSize = `${34 * W}px ${W}px`;
-    // Giữ mèo luôn nhìn theo hướng di chuyển; sprite đã có đủ trái/phải nên không cần flip.
+    const [col, row] = frame;
+    cat.style.backgroundPosition = `${-(col * W)}px ${-(row * W)}px`;
+    cat.style.backgroundSize = `${COLS * W}px ${ROWS * W}px`;
   }
 
   function framesForCurrentMode() {
-    if (mode === 'walk') return WALK_FRAMES[dir];
-    if (mode === 'idle') return IDLE_FRAMES[dir];
-    if (mode === 'reaction') return JUMP_FRAMES[dir];
-    return WALK_FRAMES[dir];
+    return ANIM[mode] || ANIM.walk;
   }
 
   function nextFrame(now) {
@@ -83,18 +91,17 @@ function initInteractiveCat() {
     cat.style.top = '1px';
     mode = 'idle';
     framePos = 0;
-    setFrame(IDLE_FRAMES[dir][0]);
+    setFrame(ANIM.idle[0]);
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       if (token !== reactionToken) return;
       mode = 'walk';
       framePos = 0;
-      setFrame(WALK_FRAMES[dir][0]);
-    }, 650);
+      setFrame(ANIM.walk[0]);
+    }, 700);
   }
 
   function react() {
-    // Nếu đang phản ứng, click tiếp sẽ không làm animation bị chồng lên nhau.
     if (mode === 'reaction') return;
     reactionToken++;
     const token = reactionToken;
@@ -102,26 +109,36 @@ function initInteractiveCat() {
     framePos = 0;
     lastFrameTime = performance.now();
     cat.classList.add('reacting');
-    setFrame(JUMP_FRAMES[dir][0]);
+    setFrame(ANIM.reaction[0]);
 
-    // Nhảy lên rồi rơi xuống; sprite jump/fall đã có sẵn trong file Kitty.
-    cat.style.top = '-8px';
+    // Click -> mèo bật lên, sau đó đáp xuống và nghỉ một chút.
+    cat.style.top = '-5px';
     setTimeout(() => {
       if (token !== reactionToken) return;
-      setFrame(JUMP_FRAMES[dir][1]);
-      cat.style.top = '-13px';
-    }, 105);
+      setFrame(ANIM.reaction[1]);
+      cat.style.top = '-12px';
+    }, 110);
     setTimeout(() => {
       if (token !== reactionToken) return;
-      setFrame(JUMP_FRAMES[dir][2]);
-      cat.style.top = '-5px';
-    }, 210);
+      setFrame(ANIM.reaction[2]);
+      cat.style.top = '-16px';
+    }, 220);
     setTimeout(() => {
       if (token !== reactionToken) return;
-      setFrame(JUMP_FRAMES[dir][3]);
+      setFrame(ANIM.reaction[3]);
+      cat.style.top = '-10px';
+    }, 330);
+    setTimeout(() => {
+      if (token !== reactionToken) return;
+      setFrame(ANIM.reaction[4]);
+      cat.style.top = '-3px';
+    }, 440);
+    setTimeout(() => {
+      if (token !== reactionToken) return;
+      setFrame(ANIM.reaction[5]);
       cat.style.top = '1px';
-    }, 315);
-    setTimeout(() => finishReaction(token), 430);
+    }, 550);
+    setTimeout(() => finishReaction(token), 680);
   }
 
   cat.addEventListener('click', (e) => {
@@ -130,12 +147,10 @@ function initInteractiveCat() {
     react();
   });
 
-  catController = {
-    stop() { mode = 'idle'; },
-    react,
-  };
+  catController = { stop() { mode = 'idle'; }, react };
 
-  setFrame(WALK_FRAMES[dir][0]);
+  setDirectionClass();
+  setFrame(ANIM.walk[0]);
   renderPosition();
 
   function loop(now) {
@@ -149,12 +164,14 @@ function initInteractiveCat() {
         x = maxX;
         dir = 'left';
         framePos = 0;
-        setFrame(WALK_FRAMES[dir][0]);
+        setDirectionClass();
+        setFrame(ANIM.walk[0]);
       } else if (x <= 0) {
         x = 0;
         dir = 'right';
         framePos = 0;
-        setFrame(WALK_FRAMES[dir][0]);
+        setDirectionClass();
+        setFrame(ANIM.walk[0]);
       } else {
         nextFrame(now);
       }
@@ -166,6 +183,7 @@ function initInteractiveCat() {
 
     requestAnimationFrame(loop);
   }
+
   requestAnimationFrame(loop);
 }
 
