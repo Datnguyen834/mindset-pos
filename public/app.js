@@ -992,8 +992,11 @@ async function searchCustomerForCheckout() {
   try {
     const d = await api(`/api/customers/search?phone=${encodeURIComponent(phone)}`);
     if (d.customer) {
+      // Tìm thấy là ghi nhận khách ngay cho đơn, không bắt nhân viên chọn lại.
       state.checkoutCustomer = { customer: d.customer, redeem: false };
-      renderCustomerFoundModal();
+      closeModal();
+      drawCart();
+      toast(`Đã chọn khách hàng ${d.customer.fullName}`);
     } else {
       renderCustomerNotFoundModal(phone);
     }
@@ -1002,13 +1005,22 @@ async function searchCustomerForCheckout() {
 
 function openCustomerLoyaltyModal(mode = 'cart') {
   state.customerPickerMode = mode;
+  const currentCustomer = state.checkoutCustomer?.customer;
+
+  // Nếu đơn đã có khách, bấm nút Khách hàng sẽ mở lại thông tin khách
+  // để nhân viên có thể bấm Discount point sau khi đã chọn món.
+  if (currentCustomer) {
+    renderCustomerFoundModal();
+    return;
+  }
+
   openModal(`<div class="customer-loyalty-modal">
     <div class="customer-modal-head">
-      <div><span class="eyebrow">Khách hàng</span><h3>Chọn khách hàng</h3><p class="muted">Tìm bằng số điện thoại để tích điểm hoặc dùng điểm cho đơn này.</p></div>
+      <div><span class="eyebrow">Khách hàng</span><h3>Chọn khách hàng</h3><p class="muted">Tìm bằng số điện thoại để ghi nhận khách cho đơn.</p></div>
       <button class="modal-close-x" type="button" onclick="closeCustomerPicker()">×</button>
     </div>
     <div class="customer-search-row"><input id="customerPhone" inputmode="numeric" maxlength="15" placeholder="Nhập số điện thoại khách" onkeydown="if(event.key==='Enter')searchCustomerForCheckout()"><button class="btn primary" onclick="searchCustomerForCheckout()">Tìm khách</button></div>
-    <button type="button" class="btn customer-skip-btn" onclick="closeCustomerPicker()">Bỏ qua</button>
+    <button type="button" class="btn customer-skip-btn" onclick="closeCustomerPicker()">Đóng</button>
   </div>`);
 }
 
