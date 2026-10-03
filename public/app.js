@@ -176,7 +176,7 @@ function drawMenu() {
     m.name.toLowerCase().includes(search)
   );
   $('#menuGrid').innerHTML = arr.map(m => `
-    <article class="menu-card" onclick="openProduct(${m.id})">
+    <article class="menu-card" onclick="openProduct(${m.id}, this)">
       <img src="${m.image || '/assets/logo.png'}" alt="${esc(m.name)}">
       <div class="mc-body"><b>${esc(m.name)}</b><div class="price">${money(m.price)}</div></div>
     </article>`).join('') || '<div class="empty">Không tìm thấy món</div>';
@@ -253,7 +253,40 @@ function addToCartMerged(item) {
   }
 }
 
-function openProduct(id) {
+function animateProductToCart(imageSrc, sourceEl = null) {
+  const cart = $('#cartItems');
+  if (!cart) return Promise.resolve();
+
+  const source = sourceEl?.querySelector?.('img') || document.querySelector('#modalBox .product-modal-head img');
+  if (!source) return Promise.resolve();
+
+  const from = source.getBoundingClientRect();
+  const to = cart.getBoundingClientRect();
+  const flyer = document.createElement('img');
+  flyer.src = imageSrc || source.src || '/assets/logo.png';
+  flyer.className = 'fly-to-cart';
+  flyer.style.left = `${from.left}px`;
+  flyer.style.top = `${from.top}px`;
+  flyer.style.width = `${from.width}px`;
+  flyer.style.height = `${from.height}px`;
+  document.body.appendChild(flyer);
+
+  const targetX = to.left + Math.min(42, Math.max(18, to.width * 0.08));
+  const targetY = to.top + 28;
+  const dx = targetX - from.left;
+  const dy = targetY - from.top;
+
+  requestAnimationFrame(() => {
+    flyer.style.transform = `translate(${dx}px, ${dy}px) scale(.28) rotate(8deg)`;
+    flyer.style.opacity = '0.25';
+  });
+
+  return new Promise(resolve => {
+    setTimeout(() => { flyer.remove(); resolve(); }, 560);
+  });
+}
+
+function openProduct(id, sourceEl = null) {
   const m = state.menu.find(x => x.id === id);
   if (!m) return;
 
@@ -271,6 +304,7 @@ function openProduct(id) {
       icePercent: 100
     });
     drawCart();
+    animateProductToCart(m.image, sourceEl);
     toast('Đã thêm bánh vào đơn');
     return;
   }
@@ -283,17 +317,22 @@ function openProduct(id) {
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="addConfiguredProduct(${m.id})">Thêm vào đơn</button></div>`);
 }
 
-function addConfiguredProduct(id) {
+async function addConfiguredProduct(id) {
   const m = state.menu.find(x => x.id === id);
   const d = window.__productDraft || {};
   if (!m) return;
+
   addToCartMerged({
     menuItemId: m.id, name: m.name, price: Number(m.price), image: m.image,
     quantity: 1, category: m.category, toppings: d.toppings || [],
     sugarPercent: Number($('#sugarPercent').value), icePercent: Number($('#icePercent').value)
   });
-  closeModal();
+
+  // Vẽ đơn trước để đích đến luôn tồn tại, nhưng giữ ảnh món để chạy hiệu ứng.
   drawCart();
+  const flight = animateProductToCart(m.image);
+  closeModal();
+  await flight;
   toast('Đã thêm món vào đơn');
 }
 

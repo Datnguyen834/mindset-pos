@@ -879,3 +879,16 @@ body.modal-open { overflow: hidden; }
   .login-card{padding:38px 20px 45px}
   .login-card h2{font-size:35px}
 }
+
+
+/* Hiệu ứng món bay từ món đã chọn vào khu vực Đơn hàng */
+.fly-to-cart{
+  position:fixed;
+  z-index:9999;
+  object-fit:cover;
+  border-radius:12px;
+  pointer-events:none;
+  box-shadow:0 14px 30px rgba(23,55,46,.28);
+  transition:transform .55s cubic-bezier(.2,.8,.2,1), opacity .55s ease;
+  will-change:transform,opacity;
+}
