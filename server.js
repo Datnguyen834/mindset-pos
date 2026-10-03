@@ -32,6 +32,14 @@ async function initDb() {
     const s = await bcrypt.hash('123456@', 10);
     await q(`INSERT INTO users(username,password_hash,full_name,role) VALUES ($1,$2,$3,'admin'),($4,$5,$6,'staff')`, ['admin',a,'Quản trị viên','nhanvien',s,'Đạt']);
   }
+  // Quyền tài khoản: admin = admin tổng (tài khoản hệ thống), manager = quản lý, staff = nhân viên.
+  // Migration cho database cũ: đổi constraint role và chuyển các tài khoản admin không phải 'admin' thành manager.
+  try {
+    await q(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
+    await q(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','manager','staff'))`);
+  } catch {}
+  await q(`UPDATE users SET role='manager' WHERE role='admin' AND username <> 'admin'`);
+
   const menuCount = await q('SELECT COUNT(*)::int AS n FROM menu_items');
   if (menuCount.rows[0].n === 0) {
     const items = [
@@ -83,7 +91,7 @@ function auth(req,res,next) {
     next();
   } catch { return res.status(401).json({message:'Phiên đăng nhập đã hết hạn'}); }
 }
-function adminOnly(req,res,next){ if(req.user.role!=='admin') return res.status(403).json({message:'Chỉ admin được phép'}); next(); }
+function adminOnly(req,res,next){ if(!['admin','manager'].includes(req.user.role)) return res.status(403).json({message:'Chỉ quản lý hoặc admin tổng được phép'}); next(); }
 function money(n){ return Math.round(Number(n)||0); }
 
 app.get('/api/health', async (_,res)=>{ try { await q('SELECT 1'); res.json({ok:true}); } catch(e){ res.status(500).json({ok:false}); }});
@@ -175,7 +183,7 @@ app.get('/api/admin/orders/staff',auth,adminOnly,async(req,res)=>{
       COALESCE(SUM(CASE WHEN o.payment_method='transfer' THEN o.total ELSE 0 END),0)::int AS transfer
     FROM users u
     LEFT JOIN orders o ON o.user_id=u.id AND o.status='paid' AND o.created_at BETWEEN $1 AND $2
-    WHERE u.role IN ('staff','admin')
+    WHERE u.role IN ('staff','manager','admin')
     GROUP BY u.id,u.full_name ORDER BY u.full_name`,[start,end]);
   const total=await q(`SELECT COUNT(*)::int orders,COALESCE(SUM(total),0)::int revenue,
       COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END),0)::int cash,
@@ -187,7 +195,7 @@ app.get('/api/admin/orders/staff',auth,adminOnly,async(req,res)=>{
 app.get('/api/admin/orders/staff/:id',auth,adminOnly,async(req,res)=>{
   const {from,to,payment='',product=''}=req.query;
   const {start,end}=reportBounds(from,to);
-  const staff=await q(`SELECT id,full_name AS "fullName" FROM users WHERE id=$1 AND role IN ('staff','admin')`,[req.params.id]);
+  const staff=await q(`SELECT id,full_name AS "fullName" FROM users WHERE id=$1 AND role IN ('staff','manager','admin')`,[req.params.id]);
   if(!staff.rowCount) return res.status(404).json({message:'Không tìm thấy nhân viên'});
   const params=[req.params.id,start,end];
   const conditions=[`o.user_id=$1`,`o.status='paid'`,`o.created_at BETWEEN $2 AND $3`];
@@ -236,10 +244,17 @@ app.get('/api/orders/:id',auth,async(req,res)=>{
   res.json({...o.rows[0],items:items.rows});
 });
 
-app.get('/api/admin/users',auth,adminOnly,async(req,res)=>{const r=await q('SELECT id,username,full_name AS "fullName",role,active,created_at FROM users ORDER BY id');res.json(r.rows);});
-app.post('/api/admin/users',auth,adminOnly,async(req,res)=>{const {username,password,fullName,role='staff'}=req.body;if(!username||!password||!fullName)return res.status(400).json({message:'Thiếu thông tin'});if(!['admin','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});try{const h=await bcrypt.hash(password,10);const r=await q('INSERT INTO users(username,password_hash,full_name,role) VALUES($1,$2,$3,$4) RETURNING id,username,full_name AS "fullName",role,active',[username,h,fullName,role]);res.json(r.rows[0]);}catch(e){res.status(400).json({message:'Username đã tồn tại'});}});
-app.put('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{const target=await q('SELECT id,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].role==='admin')return res.status(403).json({message:'Tài khoản Admin không thể chỉnh sửa'});const {fullName,password,role,active}=req.body;const sets=[];const vals=[];if(fullName!==undefined){vals.push(fullName);sets.push(`full_name=$${vals.length}`)}if(role!==undefined){if(!['admin','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});vals.push(role);sets.push(`role=$${vals.length}`)}if(active!==undefined){vals.push(!!active);sets.push(`active=$${vals.length}`)}if(password){vals.push(await bcrypt.hash(password,10));sets.push(`password_hash=$${vals.length}`)}if(!sets.length)return res.json({ok:true});vals.push(req.params.id);const r=await q(`UPDATE users SET ${sets.join(',')} WHERE id=$${vals.length} RETURNING id,username,full_name AS "fullName",role,active`,vals);res.json(r.rows[0]);});
-app.delete('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{if(Number(req.params.id)===req.user.id)return res.status(400).json({message:'Không thể xóa tài khoản đang đăng nhập'});const target=await q('SELECT id,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].role==='admin')return res.status(403).json({message:'Tài khoản Admin không thể xóa'});const r=await q('DELETE FROM users WHERE id=$1 RETURNING id,username',[req.params.id]);res.json({ok:true,user:r.rows[0]});});
+app.get('/api/admin/users',auth,adminOnly,async(req,res)=>{
+  // Quản lý chỉ được xem danh sách nhân viên; admin tổng mới thấy toàn bộ tài khoản.
+  const sql = req.user.role === 'manager'
+    ? 'SELECT id,username,full_name AS "fullName",role,active,created_at FROM users WHERE role=\'staff\' ORDER BY id'
+    : 'SELECT id,username,full_name AS "fullName",role,active,created_at FROM users ORDER BY id';
+  const r=await q(sql);
+  res.json(r.rows);
+});
+app.post('/api/admin/users',auth,adminOnly,async(req,res)=>{const {username,password,fullName,role='staff'}=req.body;if(!username||!password||!fullName)return res.status(400).json({message:'Thiếu thông tin'});if(!['manager','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});try{const h=await bcrypt.hash(password,10);const r=await q('INSERT INTO users(username,password_hash,full_name,role) VALUES($1,$2,$3,$4) RETURNING id,username,full_name AS "fullName",role,active',[username,h,fullName,role]);res.json(r.rows[0]);}catch(e){res.status(400).json({message:'Username đã tồn tại'});}});
+app.put('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{const target=await q('SELECT id,username,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].username==='admin')return res.status(403).json({message:'Tài khoản quản trị gốc không thể chỉnh sửa'});if(req.user.role==='manager' && target.rows[0].role!=='staff')return res.status(403).json({message:'Quản lý chỉ được chỉnh sửa tài khoản nhân viên'});const {fullName,password,role,active}=req.body;const sets=[];const vals=[];if(fullName!==undefined){vals.push(fullName);sets.push(`full_name=$${vals.length}`)}if(role!==undefined){if(!['manager','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});vals.push(role);sets.push(`role=$${vals.length}`)}if(active!==undefined){vals.push(!!active);sets.push(`active=$${vals.length}`)}if(password){vals.push(await bcrypt.hash(password,10));sets.push(`password_hash=$${vals.length}`)}if(!sets.length)return res.json({ok:true});vals.push(req.params.id);const r=await q(`UPDATE users SET ${sets.join(',')} WHERE id=$${vals.length} RETURNING id,username,full_name AS "fullName",role,active`,vals);res.json(r.rows[0]);});
+app.delete('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{if(Number(req.params.id)===req.user.id)return res.status(400).json({message:'Không thể xóa tài khoản đang đăng nhập'});const target=await q('SELECT id,username,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].username==='admin')return res.status(403).json({message:'Tài khoản quản trị gốc không thể xóa'});if(req.user.role==='manager' && target.rows[0].role!=='staff')return res.status(403).json({message:'Quản lý chỉ được xóa tài khoản nhân viên'});const r=await q('DELETE FROM users WHERE id=$1 RETURNING id,username',[req.params.id]);res.json({ok:true,user:r.rows[0]});});
 
 app.post('/api/admin/menu',auth,adminOnly,upload.single('image'),async(req,res)=>{const {name,category='Khác',price}=req.body;if(!name||price===undefined)return res.status(400).json({message:'Thiếu tên/giá'});const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});const img=req.file?`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`:null;const r=await q('INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,$4) RETURNING id,name,category,price,image_data AS image,active',[name,category,money(price),img]);res.json(r.rows[0]);});
 app.put('/api/admin/menu/:id',auth,adminOnly,upload.single('image'),async(req,res)=>{const {name,category,price,active}=req.body;const sets=[];const vals=[];if(category!==undefined){const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});}for(const [k,v] of [['name',name],['category',category],['price',price!==undefined?money(price):undefined],['active',active!==undefined?active!=='false':undefined]]){if(v!==undefined){vals.push(v);sets.push(`${k}=$${vals.length}`)}}if(req.file){vals.push(`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`);sets.push(`image_data=$${vals.length}`)}vals.push(req.params.id);const r=await q(`UPDATE menu_items SET ${sets.join(',')},updated_at=NOW() WHERE id=$${vals.length} RETURNING id,name,category,price,image_data AS image,active`,vals);res.json(r.rows[0]);});
