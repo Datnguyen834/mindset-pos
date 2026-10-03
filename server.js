@@ -121,7 +121,7 @@ function normalizePhone(value) { return String(value || '').replace(/\D/g, '').s
 app.get('/api/customers/search', auth, async (req,res)=>{
   const phone = normalizePhone(req.query.phone);
   if (!phone) return res.status(400).json({message:'Nhập số điện thoại'});
-  const r = await q('SELECT id,phone,full_name AS "fullName",points FROM customers WHERE phone=$1 LIMIT 1',[phone]);
+  const r = await q(`SELECT c.id,c.phone,c.full_name AS "fullName",c.points,COALESCE((SELECT SUM(o.total) FROM orders o WHERE o.customer_id=c.id AND o.status='paid' AND o.created_at >= date_trunc('year', NOW())),0)::int AS "totalSpend" FROM customers c WHERE c.phone=$1 LIMIT 1`,[phone]);
   res.json({customer: r.rows[0] || null});
 });
 
@@ -132,7 +132,7 @@ app.post('/api/customers', auth, async (req,res)=>{
   if (!fullName) return res.status(400).json({message:'Nhập họ tên khách hàng'});
   try {
     const r = await q('INSERT INTO customers(phone,full_name) VALUES($1,$2) RETURNING id,phone,full_name AS "fullName",points',[phone,fullName]);
-    res.json({customer:r.rows[0]});
+    res.json({customer:{...r.rows[0],totalSpend:0}});
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({message:'Số điện thoại này đã có tài khoản'});
     res.status(400).json({message:'Không tạo được tài khoản khách hàng'});

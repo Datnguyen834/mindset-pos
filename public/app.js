@@ -1037,7 +1037,7 @@ function renderCustomerFoundModal() {
     </div>
     <div class="customer-point-card">
       <div><span>Số điểm hiện có</span><strong>${Number(c.points || 0)} điểm</strong></div>
-      <div><span>Giá trị điểm</span><strong>${money(Number(c.points || 0) * CUSTOMER_POINT_DISCOUNT_VALUE)}</strong></div>
+      <div><span>Tổng chi tiêu</span><strong>${money(Number(c.totalSpend || 0))}</strong></div>
     </div>
     <button type="button" class="${redeemButtonClass}" ${possiblePoints > 0 && !alreadyRedeemed ? `onclick="chooseCustomerOption(true)"` : 'disabled'}>
       <span>${redeemLabel}</span>
