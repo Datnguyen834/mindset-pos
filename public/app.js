@@ -1154,8 +1154,8 @@ async function finishPaidTransfer(orderId) {
     state.checkoutCustomer = {customer:null,redeem:false,coupon:null};
     closeModal();
     renderPOS();
-    const customerResult = d.customer_id ? `<div class="customer-success-summary"><span>Khách hàng</span><b>${esc(d.customer_name || '')}</b></div>` : '';
-    openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.id}</b> · Tổng tiền <b class="modal-total">${money(d.total)}</b></p>${customerResult}<p class="muted">payOS đã xác nhận tiền chuyển vào tài khoản.</p><p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.id})">In bill</button></div>`);
+    // Thanh toán chuyển khoản thành công -> mở bill ngay, không cần bấm "In bill".
+    await printOrder(d.id);
     toast(`Đã nhận chuyển khoản #${d.id} — ${money(d.total)}`);
   } catch (e) {
     toast(e.message || 'Đã nhận thanh toán nhưng không tải được hóa đơn', true);
@@ -1448,7 +1448,8 @@ async function completePayment(method, cashMeta = null) {
     state.checkoutCustomer = {customer:null,redeem:false,coupon:null};
     closeModal();
     renderPOS();
-    openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.orderId}</b> · Discount <b>${d.discountPercent || 0}%</b>${d.pointsDiscount ? ` · Điểm giảm <b>-${money(d.pointsDiscount)}</b>` : ''} · Tổng tiền <b class="modal-total">${money(d.total)}</b></p>${customerResult}${method === 'cash' && cashMeta ? `<div class="cash-success-summary"><div><span>Tiền khách đưa</span><b>${money(cashMeta.received)}</b></div><div><span>Tiền thối lại</span><b>${money(cashMeta.change)}</b></div></div>` : ''}<p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.orderId})">In bill</button></div>`);
+    // Thanh toán thành công -> mở bill ngay, không cần qua màn hình xác nhận.
+    await printOrder(d.orderId);
     toast(`Đã thanh toán #${d.orderId} — ${money(d.total)}`);
   } catch (e) { toast(e.message, true); }
 }
@@ -1591,7 +1592,11 @@ async function printOrder(id) {
   const customerLine = o.customer_id ? `<br>Khách hàng: ${esc(o.customer_name || 'Khách hàng')}${o.points_earned ? ` · +${o.points_earned} điểm` : ''}` : '';
   const automaticDiscount = Number(o.automatic_discount || 0);
   const pointsDiscount = Number(o.points_discount || 0);
-  openModal(`<div class="invoice"><h1>Mindset</h1><p style="text-align:center">HÓA ĐƠN #${o.id}</p><p>${fmtDate(o.created_at)}<br>Nhân viên: ${esc(o.staff)}${customerLine}</p><table>${o.items.map(x => `<tr><td><strong>${esc(x.item_name)} x${x.quantity}</strong><br><small>Đường ${x.sugar_percent}% · Đá ${x.ice_percent}%<br>${x.toppings.map(t => esc(t.name)).join(', ') || 'Không topping'}</small></td><td class="r">${money(x.line_total)}</td></tr>`).join('')}</table><hr><div class="invoice-summary"><p class="r">Tạm tính: ${money(o.subtotal)}</p><p class="r">Discount${automaticDiscount ? ` ${Math.round((automaticDiscount / Math.max(1, Number(o.subtotal))) * 100)}%` : ''}: -${money(automaticDiscount)}</p>${pointsDiscount ? `<p class="r">Trừ điểm: -${money(pointsDiscount)}</p>` : ''}<p class="r"><b>TỔNG: ${money(o.total)}</b></p></div><p style="text-align:center">Cảm ơn quý khách!</p></div><div class="modal-actions no-print"><button class="btn" onclick="window.print()">In</button><button class="btn" onclick="closeModal()">Đóng</button></div>`);
+  const paymentMethod = o.payment_method === 'cash' ? 'Cash' : 'Banking';
+  const cashPaymentLine = o.payment_method === 'cash' && o.cash_received != null
+    ? `<br>Tiền khách đưa: ${money(o.cash_received)} · Tiền thối: ${money(o.cash_change || 0)}`
+    : '';
+  openModal(`<div class="invoice"><h1>Mindset</h1><p style="text-align:center">HÓA ĐƠN #${o.id}</p><p>${fmtDate(o.created_at)}<br>Nhân viên: ${esc(o.staff)}${customerLine}</p><p style="text-align:center"><strong>Payment with: ${paymentMethod}</strong>${cashPaymentLine}</p><table>${o.items.map(x => `<tr><td><strong>${esc(x.item_name)} x${x.quantity}</strong><br><small>Đường ${x.sugar_percent}% · Đá ${x.ice_percent}%<br>${x.toppings.map(t => esc(t.name)).join(', ') || 'Không topping'}</small></td><td class="r">${money(x.line_total)}</td></tr>`).join('')}</table><hr><div class="invoice-summary"><p class="r">Tạm tính: ${money(o.subtotal)}</p><p class="r">Discount${automaticDiscount ? ` ${Math.round((automaticDiscount / Math.max(1, Number(o.subtotal))) * 100)}%` : ''}: -${money(automaticDiscount)}</p>${pointsDiscount ? `<p class="r">Trừ điểm: -${money(pointsDiscount)}</p>` : ''}<p class="r"><b>TỔNG: ${money(o.total)}</b></p></div><p style="text-align:center">Cảm ơn quý khách!</p></div><div class="modal-actions no-print"><button class="btn" onclick="window.print()">In</button><button class="btn" onclick="closeModal()">Đóng</button></div>`);
 }
 
 function renderUsersTable(users) {
