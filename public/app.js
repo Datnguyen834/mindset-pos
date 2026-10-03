@@ -85,8 +85,8 @@ function fmtDate(x) {
 function nav() {
   const admin = state.user.role === 'admin';
   const items = admin
-    ? [['pos','☕','Gọi món'],['orders','▣','Doanh thu'],['users','♙','Quản lý nhân viên'],['settings','⚙','Cài đặt']]
-    : [['pos','☕','Gọi món']];
+    ? [['pos','☕','Menu'],['orders','▣','Doanh thu'],['users','♙','Quản lý nhân viên'],['settings','⚙','Cài đặt']]
+    : [['pos','☕','Menu']];
   $('#nav').innerHTML = items.map(([p, icon, label]) =>
     `<button class="nav-item ${state.page === p ? 'active' : ''}" onclick="go('${p}')"><span class="nav-icon">${icon}</span><span>${label}</span></button>`
   ).join('');
@@ -104,8 +104,8 @@ async function boot() {
     state.user = me.user;
     $('#loginView').classList.add('hidden');
     $('#appView').classList.remove('hidden');
-    $('#userName').textContent = state.user.fullName;
-    $('#roleBadge').textContent = state.user.role === 'admin' ? 'ADMIN' : 'NHÂN VIÊN';
+    $('#userName').textContent = state.user.fullName || state.user.username || '-';
+    $('#roleText').textContent = state.user.role === 'admin' ? 'Admin' : 'Nhân viên';
     nav();
     await loadBase();
     renderPage();
@@ -133,7 +133,7 @@ function renderPOS() {
   $('#page').innerHTML = `
     <div class="content pos-content">
       <div class="page-title compact-title">
-        <div><h1>Gọi món</h1></div>
+        <div><h1>Menu</h1></div>
       </div>
       <div class="pos-layout">
         <section class="menu-panel">
