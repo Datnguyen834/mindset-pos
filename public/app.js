@@ -18,40 +18,17 @@ let state = {
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
 
-// Ô nhập tiền: cho phép nhập số tự do và hiển thị dấu chấm phân cách hàng nghìn.
-// Giữ nguyên vị trí con trỏ để khi gõ 100000 sẽ ra 100.000, không bị nhảy số.
+// Ô nhập tiền: nhập số tự nhiên, không format khi đang gõ để tuyệt đối không nhảy con trỏ.
+// Khi rời ô (blur), tự thêm dấu chấm hàng nghìn: 100000 -> 100.000.
 function formatMoneyInput(el) {
   if (!el) return;
+  const digits = String(el.value ?? '').replace(/\D/g, '');
+  el.value = digits ? new Intl.NumberFormat('vi-VN').format(Number(digits)) : '';
+}
 
-  const raw = String(el.value ?? '');
-  const cursor = el.selectionStart ?? raw.length;
-
-  // Đếm có bao nhiêu chữ số nằm trước vị trí con trỏ.
-  const digitsBeforeCursor = raw.slice(0, cursor).replace(/\D/g, '').length;
-  const digits = raw.replace(/\D/g, '');
-
-  const formatted = digits
-    ? new Intl.NumberFormat('vi-VN').format(Number(digits))
-    : '';
-
-  el.value = formatted;
-
-  // Đặt con trỏ sau đúng số lượng chữ số người dùng vừa nhập.
-  let newCursor = 0;
-  let digitCount = 0;
-  while (newCursor < formatted.length && digitCount < digitsBeforeCursor) {
-    if (/\d/.test(formatted[newCursor])) digitCount++;
-    newCursor++;
-  }
-
-  // Nếu đang nhập ở cuối thì luôn đưa con trỏ về cuối.
-  if (digitsBeforeCursor >= digits.length) {
-    newCursor = formatted.length;
-  }
-
-  try {
-    el.setSelectionRange(newCursor, newCursor);
-  } catch (_) {}
+function unformatMoneyInput(el) {
+  if (!el) return;
+  el.value = String(el.value ?? '').replace(/\D/g, '');
 }
 
 function moneyInputValue(id) {
@@ -59,7 +36,20 @@ function moneyInputValue(id) {
   return Number(String(el?.value ?? '').replace(/\D/g, '')) || 0;
 }
 
+document.addEventListener('focusin', (e) => {
+  if (e.target.matches('input.money-input')) unformatMoneyInput(e.target);
+});
+
 document.addEventListener('input', (e) => {
+  if (e.target.matches('input.money-input')) {
+    // Chỉ giữ chữ số trong lúc nhập; không thay đổi giá trị/caret bằng formatter.
+    const el = e.target;
+    const cleaned = String(el.value ?? '').replace(/\D/g, '');
+    if (el.value !== cleaned) el.value = cleaned;
+  }
+});
+
+document.addEventListener('focusout', (e) => {
   if (e.target.matches('input.money-input')) formatMoneyInput(e.target);
 });
 
