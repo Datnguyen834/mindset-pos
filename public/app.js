@@ -53,8 +53,8 @@ function initInteractiveCat() {
     jump: row(8, 6),
   };
 
-  let x = Math.max(0, Math.random() * Math.max(1, window.innerWidth - W));
-  let y = Math.max(0, Math.random() * Math.max(1, window.innerHeight - W));
+  let x = Math.max(0, Math.random() * Math.max(1, track.clientWidth - W));
+  let y = Math.max(0, Math.random() * Math.max(1, track.clientHeight - W));
   // 8 hướng rõ ràng: trái, phải, lên, xuống và 4 đường chéo.
   // Tốc độ được chuẩn hóa để đi chéo không nhanh hơn đi thẳng.
   const DIRECTIONS = [
@@ -110,8 +110,8 @@ function initInteractiveCat() {
 
   function bounds() {
     return {
-      maxX: Math.max(0, window.innerWidth - W),
-      maxY: Math.max(0, window.innerHeight - W)
+      maxX: Math.max(0, track.clientWidth - W),
+      maxY: Math.max(0, track.clientHeight - W)
     };
   }
 
@@ -270,8 +270,9 @@ function initInteractiveCat() {
     if (!dragging) return;
     e.preventDefault();
     const b = bounds();
-    const nx = e.clientX - dragOffsetX;
-    const ny = e.clientY - dragOffsetY;
+    const trackRect = track.getBoundingClientRect();
+    const nx = e.clientX - trackRect.left - dragOffsetX;
+    const ny = e.clientY - trackRect.top - dragOffsetY;
     if (Math.abs(nx - x) + Math.abs(ny - y) > 5) didDrag = true;
     x = Math.max(0, Math.min(b.maxX, nx));
     y = Math.max(0, Math.min(b.maxY, ny));
@@ -470,8 +471,16 @@ function nav() {
   ).join('');
 }
 
+function setCatVisibility() {
+  const track = $('#catTrack');
+  if (!track) return;
+  // Mèo chỉ xuất hiện trên trang Menu (POS).
+  track.classList.toggle('cat-hidden', state.page !== 'pos');
+}
+
 function go(p) {
   state.page = p;
+  setCatVisibility();
   nav();
   renderPage();
 }
@@ -489,6 +498,7 @@ async function boot({ animate = false } = {}) {
 
     appView.classList.remove('hidden');
     initInteractiveCat();
+    setCatVisibility();
     appView.classList.remove('app-enter');
     void appView.offsetWidth; // restart animation nếu đăng nhập lại
     if (animate) appView.classList.add('app-enter');
