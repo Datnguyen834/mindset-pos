@@ -14,7 +14,7 @@ let state = {
   page: 'pos',
   paymentMethod: 'cash',
   userList: null,
-  settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false, discountSettings: false },
+  settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false, discountSettings: false, bankSettings: false },
   checkoutCustomer: { customer: null, redeem: false }, pendingCustomerSelection: null, customerPickerMode: 'checkout'
 };
 
@@ -1551,19 +1551,27 @@ async function renderSettings() {
 
         </section>
 
-        <section class="section-card settings-qr-card">
-          <h3>Tài khoản ngân hàng</h3>
-          <p class="muted">Admin hoặc Quản lý cấu hình một lần. Mỗi lần thanh toán, VietQR tự tạo mã theo đúng số tiền thực tế.</p>
-          <form id="bankForm" style="margin-top:14px">
-            <div class="form-grid">
-              <label>Ngân hàng<select id="bankId" required><option value="">Chọn ngân hàng</option>${(state.bankList||[]).map(b => `<option value="${esc(String(b.bin||b.id||''))}" data-name="${esc(b.shortName||b.name||'')}" ${String(b.bin||b.id||'')===String(state.bankAccount.bankId||'')?'selected':''}>${esc(b.shortName ? `${b.shortName} · ${b.name}` : b.name || '')}</option>`).join('')}</select></label>
-              <label>Số tài khoản<input id="bankAccountNo" inputmode="numeric" maxlength="19" value="${esc(state.bankAccount.accountNo||'')}" placeholder="Số tài khoản" required></label>
-              <label>Tên tài khoản<input id="bankAccountName" maxlength="50" value="${esc(state.bankAccount.accountName||'')}" placeholder="NGUYEN VAN A" required></label>
-              <label>Mẫu QR<select id="bankTemplate"><option value="compact2" ${state.bankAccount.template==='compact2'?'selected':''}>compact2 · QR + thông tin</option><option value="compact" ${state.bankAccount.template==='compact'?'selected':''}>compact · QR</option><option value="qr_only" ${state.bankAccount.template==='qr_only'?'selected':''}>qr_only · Chỉ QR</option><option value="print" ${state.bankAccount.template==='print'?'selected':''}>print · Đầy đủ</option></select></label>
-            </div>
-            <div id="bankQrPreview" style="margin-top:16px;text-align:center"></div>
-            <button class="btn primary" style="margin-top:10px" type="submit">Lưu tài khoản ngân hàng</button>
-          </form>
+        <section class="section-card settings-qr-card settings-bank-card">
+          <button type="button" class="settings-accordion-head" onclick="toggleSettingsSection('bankSettings')">
+            <span>
+              <strong>Tài khoản ngân hàng</strong>
+              <small>Cấu hình VietQR · Bấm để xem và chỉnh sửa</small>
+            </span>
+            <span class="settings-chevron ${state.settingsOpen.bankSettings ? 'open' : ''}" id="bankSettingsChevron">⌄</span>
+          </button>
+          <div class="settings-accordion-body ${state.settingsOpen.bankSettings ? '' : 'hidden'}" id="bankSettings">
+            <p class="muted">Admin hoặc Quản lý cấu hình một lần. Mỗi lần thanh toán, VietQR tự tạo mã theo đúng số tiền thực tế.</p>
+            <form id="bankForm" style="margin-top:14px">
+              <div class="form-grid">
+                <label>Ngân hàng<select id="bankId" required><option value="">Chọn ngân hàng</option>${(state.bankList||[]).map(b => `<option value="${esc(String(b.bin||b.id||''))}" data-name="${esc(b.shortName||b.name||'')}" ${String(b.bin||b.id||'')===String(state.bankAccount.bankId||'')?'selected':''}>${esc(b.shortName ? `${b.shortName} · ${b.name}` : b.name || '')}</option>`).join('')}</select></label>
+                <label>Số tài khoản<input id="bankAccountNo" inputmode="numeric" maxlength="19" value="${esc(state.bankAccount.accountNo||'')}" placeholder="Số tài khoản" required></label>
+                <label>Tên tài khoản<input id="bankAccountName" maxlength="50" value="${esc(state.bankAccount.accountName||'')}" placeholder="NGUYEN VAN A" required></label>
+                <label>Mẫu QR<select id="bankTemplate"><option value="compact2" ${state.bankAccount.template==='compact2'?'selected':''}>compact2 · QR + thông tin</option><option value="compact" ${state.bankAccount.template==='compact'?'selected':''}>compact · QR</option><option value="qr_only" ${state.bankAccount.template==='qr_only'?'selected':''}>qr_only · Chỉ QR</option><option value="print" ${state.bankAccount.template==='print'?'selected':''}>print · Đầy đủ</option></select></label>
+              </div>
+              <div id="bankQrPreview" style="margin-top:16px;text-align:center"></div>
+              <button class="btn primary" style="margin-top:10px" type="submit">Lưu tài khoản ngân hàng</button>
+            </form>
+          </div>
         </section>
       </div>
     </div>`;
@@ -1727,7 +1735,7 @@ async function saveBankAccount(e) {
   e.preventDefault();
   const bankIdEl=$('#bankId'); const opt=bankIdEl?.selectedOptions?.[0];
   const body={ bankId:bankIdEl?.value||'', bankName:opt?.dataset?.name||opt?.textContent?.split(' · ')[0]||'', accountNo:$('#bankAccountNo')?.value||'', accountName:$('#bankAccountName')?.value||'', template:$('#bankTemplate')?.value||'compact2' };
-  try { const d=await api('/api/admin/payment-bank',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); state.bankAccount=d.bank; toast('Đã lưu tài khoản ngân hàng'); renderSettings(); } catch(e){ toast(e.message,true); }
+  try { const d=await api('/api/admin/payment-bank',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); state.bankAccount=d.bank; state.settingsOpen.bankSettings=true; toast('Đã lưu tài khoản ngân hàng'); renderSettings(); } catch(e){ toast(e.message,true); }
 }
 
 async function uploadQR(){ toast('QR tĩnh đã được thay bằng VietQR tự động', true); }

@@ -961,6 +961,16 @@ body.modal-open { overflow: hidden; }
   position:sticky;
   top:0;
 }
+.settings-bank-card{
+  padding:0;
+  overflow:hidden;
+}
+.settings-bank-card .settings-accordion-head{
+  padding:18px;
+}
+.settings-bank-card .settings-accordion-body{
+  padding:16px 18px 18px;
+}
 .settings-block{
   border:1px solid var(--line);
   border-radius:12px;
