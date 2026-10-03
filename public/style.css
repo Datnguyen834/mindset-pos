@@ -937,3 +937,16 @@ body.modal-open { overflow: hidden; }
   .settings-side{position:static;}
   .qr-settings-card{position:static;}
 }
+
+/* Hiệu ứng món bay từ popup vào khu vực đơn hàng */
+.fly-to-cart{
+  position:fixed;
+  z-index:9999;
+  object-fit:cover;
+  border-radius:12px;
+  pointer-events:none;
+  box-shadow:0 14px 30px rgba(23,55,46,.28);
+  transition:transform .55s cubic-bezier(.2,.8,.2,1), opacity .55s ease;
+  will-change:transform,opacity;
+}
+.fly-to-cart::after{content:'';}

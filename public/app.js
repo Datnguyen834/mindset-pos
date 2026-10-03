@@ -248,17 +248,54 @@ function openProduct(id) {
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="addConfiguredProduct(${m.id})">Thêm vào đơn</button></div>`);
 }
 
-function addConfiguredProduct(id) {
+function animateProductToCart(imageSrc) {
+  const modalImage = document.querySelector('#modalBox .product-modal-head img');
+  const cart = $('#cartItems');
+  if (!modalImage || !cart) return Promise.resolve();
+
+  const from = modalImage.getBoundingClientRect();
+  const to = cart.getBoundingClientRect();
+  const flyer = document.createElement('img');
+  flyer.src = imageSrc || modalImage.src || '/assets/logo.png';
+  flyer.className = 'fly-to-cart';
+  flyer.style.left = `${from.left}px`;
+  flyer.style.top = `${from.top}px`;
+  flyer.style.width = `${from.width}px`;
+  flyer.style.height = `${from.height}px`;
+  document.body.appendChild(flyer);
+
+  const targetX = to.left + Math.min(42, Math.max(18, to.width * 0.08));
+  const targetY = to.top + 28;
+  const dx = targetX - from.left;
+  const dy = targetY - from.top;
+
+  requestAnimationFrame(() => {
+    flyer.style.transform = `translate(${dx}px, ${dy}px) scale(.28) rotate(8deg)`;
+    flyer.style.opacity = '0.25';
+  });
+
+  return new Promise(resolve => {
+    setTimeout(() => { flyer.remove(); resolve(); }, 560);
+  });
+}
+
+async function addConfiguredProduct(id) {
   const m = state.menu.find(x => x.id === id);
   const d = window.__productDraft || {};
   if (!m) return;
+
   state.cart.push({
     key: crypto.randomUUID(), menuItemId: m.id, name: m.name, price: Number(m.price), image: m.image,
     category: m.category,
     quantity: 1, toppings: d.toppings || [], sugarPercent: Number($('#sugarPercent').value), icePercent: Number($('#icePercent').value)
   });
-  closeModal();
+
+  // Vẽ đơn trước để đích đến luôn tồn tại, nhưng giữ modal trong lúc hiệu ứng chạy.
   drawCart();
+  const imageSrc = m.image || '/assets/logo.png';
+  const flight = animateProductToCart(imageSrc);
+  closeModal();
+  await flight;
   toast('Đã thêm món vào đơn');
 }
 
