@@ -93,24 +93,9 @@ function nav() {
 }
 
 function go(p) {
-  if (state.page === p) return;
-
-  const page = $('#page');
-  const order = ['pos', 'orders', 'users', 'settings'];
-  const fromIndex = order.indexOf(state.page);
-  const toIndex = order.indexOf(p);
-  const direction = toIndex > fromIndex ? 'forward' : 'backward';
-
   state.page = p;
   nav();
   renderPage();
-
-  // Re-trigger the page transition every time the sidebar tab changes.
-  if (page) {
-    page.classList.remove('page-switch-in', 'page-switch-forward', 'page-switch-backward');
-    void page.offsetWidth;
-    page.classList.add('page-switch-in', direction === 'backward' ? 'page-switch-backward' : 'page-switch-forward');
-  }
 }
 
 async function boot() {
