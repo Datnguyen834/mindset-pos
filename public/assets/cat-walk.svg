@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 70" width="140" height="70">
+  <g id="cat">
+    <!-- tail -->
+    <path d="M24 43 C8 47, 7 28, 20 27 C31 26, 31 38, 22 38" fill="none" stroke="#d99a67" stroke-width="6" stroke-linecap="round"/>
+    <!-- body -->
+    <ellipse cx="69" cy="39" rx="39" ry="19" fill="#e8a873"/>
+    <!-- head + ears -->
+    <circle cx="108" cy="30" r="16" fill="#e8a873"/>
+    <path d="M96 19 L99 5 L108 17 Z" fill="#e8a873"/>
+    <path d="M110 17 L119 5 L120 22 Z" fill="#e8a873"/>
+    <path d="M99 13 L100 9 L104 16 Z M115 16 L118 10 L118 18 Z" fill="#f2c2a0"/>
+    <!-- face -->
+    <circle cx="103" cy="29" r="1.7" fill="#173b31"/>
+    <circle cx="113" cy="29" r="1.7" fill="#173b31"/>
+    <path d="M107 34 Q108 36 110 34" fill="none" stroke="#7d4d36" stroke-width="1.5" stroke-linecap="round"/>
+    <!-- legs -->
+    <g fill="#d9915e" stroke="#c57e4f" stroke-width="1">
+      <path id="leg1" d="M45 50 L42 64 L49 64 L52 50 Z">
+        <animateTransform attributeName="transform" type="rotate" values="10 48 50;-18 48 50;10 48 50" dur="0.55s" repeatCount="indefinite"/>
+      </path>
+      <path id="leg2" d="M61 52 L64 65 L71 65 L68 51 Z">
+        <animateTransform attributeName="transform" type="rotate" values="-18 66 52;10 66 52;-18 66 52" dur="0.55s" repeatCount="indefinite"/>
+      </path>
+      <path id="leg3" d="M79 51 L76 65 L83 65 L86 51 Z">
+        <animateTransform attributeName="transform" type="rotate" values="10 81 51;-18 81 51;10 81 51" dur="0.55s" repeatCount="indefinite" begin="0.275s"/>
+      </path>
+      <path id="leg4" d="M94 49 L97 63 L104 63 L101 48 Z">
+        <animateTransform attributeName="transform" type="rotate" values="-18 100 49;10 100 49;-18 100 49" dur="0.55s" repeatCount="indefinite" begin="0.275s"/>
+      </path>
+    </g>
+    <!-- walking bob -->
+    <animateTransform attributeName="transform" type="translate" values="0 0;0 -2;0 0;0 -2;0 0" dur="0.55s" repeatCount="indefinite"/>
+  </g>
+</svg>
