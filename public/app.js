@@ -1105,19 +1105,18 @@ async function renderPayOSQr(qrValue) {
   const ready = await ensureQrCodeLibrary();
   if (ready) {
     try {
-      const dataUrl = await QRCode.toDataURL(value, {
+      const canvas = document.createElement('canvas');
+      canvas.width = 280;
+      canvas.height = 280;
+      canvas.className = 'payos-qr-canvas';
+      canvas.setAttribute('aria-label','Mã QR thanh toán payOS');
+      await QRCode.toCanvas(canvas, value, {
         width: 280,
         margin: 1,
         errorCorrectionLevel: 'M',
       });
-      const img = new Image();
-      img.className = 'payos-qr-image';
-      img.width = 280;
-      img.height = 280;
-      img.alt = 'Mã QR thanh toán payOS';
-      img.src = dataUrl;
       wrap.innerHTML = '';
-      wrap.appendChild(img);
+      wrap.appendChild(canvas);
       return;
     } catch (e) {
       console.error('QR render error:', e);
