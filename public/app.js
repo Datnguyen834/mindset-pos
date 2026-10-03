@@ -12,6 +12,7 @@ let state = {
   discountRules: [],
   page: 'pos',
   paymentMethod: 'cash',
+  catVisible: false,
   userList: null,
   settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false, discountSettings: false, bankSettings: false },
   checkoutCustomer: { customer: null, redeem: false }, pendingCustomerSelection: null, customerPickerMode: 'checkout'
@@ -507,16 +508,29 @@ function nav() {
   ).join('');
 }
 
+function updateCatToggle() {
+  const btn = $('#catToggle');
+  if (!btn) return;
+  btn.setAttribute('aria-pressed', state.catVisible ? 'true' : 'false');
+  btn.setAttribute('aria-label', state.catVisible ? 'Ẩn mèo' : 'Hiện mèo');
+  btn.title = state.catVisible ? 'Ẩn mèo' : 'Hiện mèo';
+}
+
+function toggleCatVisibility() {
+  state.catVisible = !state.catVisible;
+  updateCatToggle();
+  setCatVisibility();
+}
+
 function setCatVisibility() {
   const track = $('#catTrack');
   if (!track) return;
-  // Mèo chỉ xuất hiện trên trang Menu (POS).
-  const shouldShow = state.page === 'pos';
+  // Mèo chỉ xuất hiện trên trang Menu (POS) và khi người dùng bật biểu tượng mắt.
+  const shouldShow = state.page === 'pos' && state.catVisible;
   const wasHidden = track.classList.contains('cat-hidden');
   track.classList.toggle('cat-hidden', !shouldShow);
 
-  // Mỗi lần quay lại Menu, cho mèo xuất hiện ở một vị trí ngẫu nhiên
-  // trong vùng trắng thay vì luôn quay lại góc/trạng thái cũ.
+  // Khi vừa bật hoặc quay lại Menu, cho mèo xuất hiện ở vị trí ngẫu nhiên.
   if (shouldShow && wasHidden && catController?.randomSpawn) {
     requestAnimationFrame(() => catController.randomSpawn());
   }
@@ -1999,5 +2013,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,toggleCatVisibility,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();
