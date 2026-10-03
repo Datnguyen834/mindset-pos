@@ -11,7 +11,8 @@ let state = {
   qr: '',
   page: 'pos',
   paymentMethod: 'cash',
-  userList: null
+  userList: null,
+  settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false }
 };
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
@@ -692,23 +693,29 @@ async function renderSettings() {
       <div class="settings-layout">
         <section class="section-card settings-main-card">
 
-          <div class="settings-block category-block">
-            <div class="settings-block-head">
-              <div>
-                <h3>Danh mục</h3>
-                <p class="settings-block-desc">Thêm, sửa hoặc xóa danh mục món.</p>
+          <div class="settings-accordion">
+            <button type="button" class="settings-accordion-head" onclick="toggleSettingsSection('categorySettings')">
+              <span>
+                <strong>Danh mục</strong>
+                <small>${categories.length} danh mục · Bấm để xem và chỉnh sửa</small>
+              </span>
+              <span class="settings-chevron ${state.settingsOpen.categorySettings ? 'open' : ''}" id="categorySettingsChevron">⌄</span>
+            </button>
+            <div class="settings-accordion-body ${state.settingsOpen.categorySettings ? '' : 'hidden'}" id="categorySettings">
+              <div class="settings-section-toolbar">
+                <span class="muted">Danh sách danh mục</span>
+                <button class="btn" onclick="categoryForm()">+ Thêm danh mục</button>
               </div>
-            </div>
-            <div class="category-actions">
-              <div class="category-chips">
-                ${categories.map(c => `
-                  <div class="category-chip">
-                    <span>${esc(c.name)}</span>
-                    <button type="button" onclick='categoryForm(${JSON.stringify(c)})'>Sửa</button>
-                    <button type="button" class="danger-text" onclick="deleteCategory(${c.id})">Xóa</button>
-                  </div>
-                `).join('')}
-                <button class="btn category-add-btn" onclick="categoryForm()">+ Thêm danh mục</button>
+              <div class="category-actions">
+                <div class="category-chips">
+                  ${categories.map(c => `
+                    <div class="category-chip">
+                      <span>${esc(c.name)}</span>
+                      <button type="button" onclick='categoryForm(${JSON.stringify(c)})'>Sửa</button>
+                      <button type="button" class="danger-text" onclick="deleteCategory(${c.id})">Xóa</button>
+                    </div>
+                  `).join('') || '<div class="empty">Chưa có danh mục</div>'}
+                </div>
               </div>
             </div>
           </div>
@@ -719,9 +726,9 @@ async function renderSettings() {
                 <strong>Menu món</strong>
                 <small>${menu.length} món · Bấm để xem và chỉnh sửa</small>
               </span>
-              <span class="settings-chevron" id="menuSettingsChevron">⌄</span>
+              <span class="settings-chevron ${state.settingsOpen.menuSettings ? 'open' : ''}" id="menuSettingsChevron">⌄</span>
             </button>
-            <div class="settings-accordion-body hidden" id="menuSettings">
+            <div class="settings-accordion-body ${state.settingsOpen.menuSettings ? '' : 'hidden'}" id="menuSettings">
               <div class="settings-section-toolbar">
                 <span class="muted">Danh sách món</span>
                 <button class="btn primary" onclick="menuForm()">+ Thêm món</button>
@@ -755,9 +762,9 @@ async function renderSettings() {
                 <strong>Topping</strong>
                 <small>${state.toppings.length} topping · Bấm để xem và chỉnh sửa</small>
               </span>
-              <span class="settings-chevron" id="toppingSettingsChevron">⌄</span>
+              <span class="settings-chevron ${state.settingsOpen.toppingSettings ? 'open' : ''}" id="toppingSettingsChevron">⌄</span>
             </button>
-            <div class="settings-accordion-body hidden" id="toppingSettings">
+            <div class="settings-accordion-body ${state.settingsOpen.toppingSettings ? '' : 'hidden'}" id="toppingSettings">
               <div class="settings-section-toolbar">
                 <span class="muted">Danh sách topping</span>
                 <button class="btn" onclick="toppingForm()">+ Thêm topping</button>
@@ -798,6 +805,7 @@ function toggleSettingsSection(sectionId) {
   if (!body) return;
 
   const willOpen = body.classList.contains('hidden');
+  state.settingsOpen[sectionId] = willOpen;
   body.classList.toggle('hidden', !willOpen);
 
   const chevron = $('#' + sectionId + 'Chevron');
@@ -814,6 +822,7 @@ function categoryForm(c = {}, returnToMenu = false) {
       await api(c.id ? `/api/admin/categories/${c.id}` : '/api/admin/categories', {method:c.id ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name})});
       closeModal();
       await loadBase();
+      state.settingsOpen.categorySettings = true;
       toast(c.id ? 'Đã sửa danh mục' : 'Đã thêm danh mục');
       if (returnToMenu) menuForm({...window.__menuDraft, category:name}); else renderSettings();
     } catch (e) { toast(e.message, true); }
@@ -829,6 +838,7 @@ async function deleteCategory(id) {
     onConfirm: async () => {
       await api('/api/admin/categories/' + id, {method:'DELETE'});
       await loadBase();
+      state.settingsOpen.categorySettings = true;
       await renderSettings();
       toast('Đã xóa danh mục');
     }
@@ -847,7 +857,7 @@ async function saveMenu(e, id) {
   const fd = new FormData();
   fd.append('name', $('#mName').value); fd.append('category', $('#mCat').value); fd.append('price', $('#mPrice').value);
   if ($('#mImage').files[0]) fd.append('image', $('#mImage').files[0]);
-  try { await api(id ? `/api/admin/menu/${id}` : '/api/admin/menu', {method:id ? 'PUT' : 'POST', body:fd}); closeModal(); await loadBase(); toast('Đã lưu món'); renderSettings(); }
+  try { await api(id ? `/api/admin/menu/${id}` : '/api/admin/menu', {method:id ? 'PUT' : 'POST', body:fd}); closeModal(); await loadBase(); state.settingsOpen.menuSettings = true; toast('Đã lưu món'); renderSettings(); }
   catch (e) { toast(e.message, true); }
 }
 
@@ -860,6 +870,7 @@ async function deleteMenu(id) {
     onConfirm: async () => {
       await api('/api/admin/menu/' + id, {method:'DELETE'});
       await loadBase();
+      state.settingsOpen.menuSettings = true;
       await renderSettings();
       toast('Đã xóa sản phẩm');
     }
@@ -885,6 +896,7 @@ async function saveTop(id = null) {
   });
   closeModal();
   await loadBase();
+  state.settingsOpen.toppingSettings = true;
   renderSettings();
   toast(id ? 'Đã sửa topping' : 'Đã thêm topping');
 }
@@ -897,6 +909,7 @@ async function deleteTop(id) {
     onConfirm: async () => {
       await api('/api/admin/toppings/' + id,{method:'DELETE'});
       await loadBase();
+      state.settingsOpen.toppingSettings = true;
       await renderSettings();
       toast('Đã xóa topping');
     }
