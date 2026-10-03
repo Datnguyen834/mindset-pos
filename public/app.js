@@ -8,7 +8,8 @@ let state = {
   toppings: [],
   cart: [],
   category: 'Tất cả',
-  qr: '',
+  bankAccount: { bankId:'', bankName:'', accountNo:'', accountName:'', template:'compact2' },
+  bankList: [],
   discountRules: [],
   page: 'pos',
   paymentMethod: 'cash',
@@ -571,18 +572,20 @@ async function boot({ animate = false } = {}) {
 
 async function loadBase() {
   // Tải song song thay vì chờ từng request xong mới chạy request tiếp theo.
-  const [menu, categories, toppings, qr, discountRules] = await Promise.all([
+  const [menu, categories, toppings, bank, discountRules, banks] = await Promise.all([
     api('/api/menu'),
     api('/api/categories'),
     api('/api/toppings'),
-    api('/api/settings/qr'),
-    api('/api/settings/discount-rules')
+    api('/api/settings/bank'),
+    api('/api/settings/discount-rules'),
+    api('/api/banks').catch(() => ({banks:[]}))
   ]);
 
   state.menu = menu;
   state.categories = categories;
   state.toppings = toppings;
-  state.qr = qr.image || '';
+  state.bankAccount = bank.bank || { bankId:'', bankName:'', accountNo:'', accountName:'', template:'compact2' };
+  state.bankList = Array.isArray(banks.banks) ? banks.banks : [];
   state.discountRules = Array.isArray(discountRules.rules) ? discountRules.rules : [];
 }
 
@@ -987,6 +990,16 @@ function syncPaymentUI() {
   transfer.classList.toggle('active', state.paymentMethod === 'transfer');
 }
 
+function buildVietQrUrl(amount, addInfo='MINDSET') {
+  const b = state.bankAccount || {};
+  if (!b.bankId || !b.accountNo || !b.accountName || !amount) return '';
+  const template = ['compact2','compact','qr_only','print'].includes(b.template) ? b.template : 'compact2';
+  const bankId = encodeURIComponent(b.bankId);
+  const accountNo = encodeURIComponent(b.accountNo);
+  const qs = new URLSearchParams({ amount:String(Math.round(amount)), addInfo:String(addInfo).slice(0,50), accountName:b.accountName });
+  return `https://img.vietqr.io/image/${bankId}-${accountNo}-${template}.png?${qs.toString()}`;
+}
+
 async function checkout() {
   if (!state.cart.length) return toast('Hãy chọn ít nhất một món', true);
   continueCheckoutAfterLoyalty();
@@ -995,8 +1008,12 @@ async function checkout() {
 function continueCheckoutAfterLoyalty() {
   const info = checkoutDiscountInfo();
   if (state.paymentMethod === 'transfer') {
-    if (!state.qr) return toast('Admin chưa upload QR chuyển khoản', true);
-    openModal(`<div class="checkout-loyalty-summary"><div class="eyebrow">Thanh toán</div><h3>Quét QR chuyển khoản</h3><p class="muted">Khách quét mã, kiểm tra giao dịch rồi bấm xác nhận.</p><img class="checkout-qr" src="${state.qr}" alt="QR chuyển khoản"><div class="cash-summary"><div><span>Tổng bill</span><b>${money(info.total)}</b></div><div><span>Discount tự động</span><b>-${money(info.amount - info.pointsDiscount)}</b></div>${info.pointsDiscount > 0 ? `<div><span>Discount point</span><b>-${money(info.pointsDiscount)}</b></div>` : ''}<div><span>Còn phải thanh toán</span><b>${money(info.total)}</b></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('transfer')">Thanh toán thành công</button></div></div>`);
+    const bank = state.bankAccount || {};
+    if (!bank.bankId || !bank.accountNo || !bank.accountName) return toast('Chưa cấu hình tài khoản ngân hàng VietQR trong Cài đặt', true);
+    const ref = `MINDSET ${Date.now().toString().slice(-8)}`;
+    const qrUrl = buildVietQrUrl(info.total, ref);
+    if (!qrUrl) return toast('Thông tin VietQR chưa đầy đủ', true);
+    openModal(`<div class="checkout-loyalty-summary"><div class="eyebrow">Thanh toán</div><h3>Quét QR chuyển khoản</h3><p class="muted">QR VietQR tự động điền đúng số tiền <b>${money(info.total)}</b>.</p><img class="checkout-qr" src="${qrUrl}" alt="VietQR chuyển khoản"><div class="cash-summary"><div><span>Tổng bill</span><b>${money(info.total)}</b></div><div><span>Discount tự động</span><b>-${money(info.amount - info.pointsDiscount)}</b></div>${info.pointsDiscount > 0 ? `<div><span>Discount point</span><b>-${money(info.pointsDiscount)}</b></div>` : ''}<div><span>Còn phải thanh toán</span><b>${money(info.total)}</b></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('transfer')">Thanh toán thành công</button></div></div>`);
   } else {
     openCashPaymentModal();
   }
@@ -1535,18 +1552,26 @@ async function renderSettings() {
         </section>
 
         <section class="section-card settings-qr-card">
-          <h3>QR chuyển khoản</h3>
-          <p class="muted">Ảnh này sẽ hiện cho nhân viên khi chọn chuyển khoản.</p>
-          ${state.qr ? `<img class="qr-preview" src="${state.qr}">` : '<div class="empty">Chưa có QR</div>'}
-          <form id="qrForm" style="margin-top:14px">
-            <input type="file" id="qrFile" accept="image/*">
-            <button class="btn primary" style="margin-top:10px" type="submit">Upload QR</button>
+          <h3>Tài khoản ngân hàng</h3>
+          <p class="muted">Admin hoặc Quản lý cấu hình một lần. Mỗi lần thanh toán, VietQR tự tạo mã theo đúng số tiền thực tế.</p>
+          <form id="bankForm" style="margin-top:14px">
+            <div class="form-grid">
+              <label>Ngân hàng<select id="bankId" required><option value="">Chọn ngân hàng</option>${(state.bankList||[]).map(b => `<option value="${esc(String(b.bin||b.id||''))}" data-name="${esc(b.shortName||b.name||'')}" ${String(b.bin||b.id||'')===String(state.bankAccount.bankId||'')?'selected':''}>${esc(b.shortName ? `${b.shortName} · ${b.name}` : b.name || '')}</option>`).join('')}</select></label>
+              <label>Số tài khoản<input id="bankAccountNo" inputmode="numeric" maxlength="19" value="${esc(state.bankAccount.accountNo||'')}" placeholder="Số tài khoản" required></label>
+              <label>Tên tài khoản<input id="bankAccountName" maxlength="50" value="${esc(state.bankAccount.accountName||'')}" placeholder="NGUYEN VAN A" required></label>
+              <label>Mẫu QR<select id="bankTemplate"><option value="compact2" ${state.bankAccount.template==='compact2'?'selected':''}>compact2 · QR + thông tin</option><option value="compact" ${state.bankAccount.template==='compact'?'selected':''}>compact · QR</option><option value="qr_only" ${state.bankAccount.template==='qr_only'?'selected':''}>qr_only · Chỉ QR</option><option value="print" ${state.bankAccount.template==='print'?'selected':''}>print · Đầy đủ</option></select></label>
+            </div>
+            <div id="bankQrPreview" style="margin-top:16px;text-align:center"></div>
+            <button class="btn primary" style="margin-top:10px" type="submit">Lưu tài khoản ngân hàng</button>
           </form>
         </section>
       </div>
     </div>`;
 
-  $('#qrForm').onsubmit = uploadQR;
+  $('#bankForm').onsubmit = saveBankAccount;
+  const bankIdEl = $('#bankId');
+  if (bankIdEl) bankIdEl.addEventListener('change', () => { const opt=bankIdEl.selectedOptions[0]; if(opt?.dataset?.name) $('#bankAccountName').value = state.bankAccount.accountName || ''; });
+  renderBankPreview();
 }
 
 function toggleSettingsSection(sectionId) {
@@ -1692,7 +1717,20 @@ async function deleteTop(id) {
     }
   });
 }
-async function uploadQR(e) { e.preventDefault(); const f = $('#qrFile').files[0]; if (!f) return toast('Chọn file QR', true); const fd = new FormData(); fd.append('qr', f); try { await api('/api/admin/qr', {method:'POST',body:fd}); await loadBase(); toast('Đã upload QR'); renderSettings(); } catch(e) { toast(e.message,true); } }
+function renderBankPreview() {
+  const el = $('#bankQrPreview'); if (!el) return;
+  const url = buildVietQrUrl(100000, 'MINDSET DEMO');
+  el.innerHTML = url ? `<div class="muted" style="margin-bottom:8px">Xem trước với 100.000đ</div><img class="qr-preview" src="${url}" alt="VietQR preview">` : '<div class="empty">Nhập đủ thông tin để xem trước VietQR</div>';
+}
+
+async function saveBankAccount(e) {
+  e.preventDefault();
+  const bankIdEl=$('#bankId'); const opt=bankIdEl?.selectedOptions?.[0];
+  const body={ bankId:bankIdEl?.value||'', bankName:opt?.dataset?.name||opt?.textContent?.split(' · ')[0]||'', accountNo:$('#bankAccountNo')?.value||'', accountName:$('#bankAccountName')?.value||'', template:$('#bankTemplate')?.value||'compact2' };
+  try { const d=await api('/api/admin/payment-bank',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); state.bankAccount=d.bank; toast('Đã lưu tài khoản ngân hàng'); renderSettings(); } catch(e){ toast(e.message,true); }
+}
+
+async function uploadQR(){ toast('QR tĩnh đã được thay bằng VietQR tự động', true); }
 
 async function renderReports() {
   const today = localDateString();
