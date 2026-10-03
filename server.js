@@ -260,6 +260,38 @@ app.post('/api/orders',auth,async(req,res)=>{
     }
 
     await client.query('COMMIT');
+
+    // Với chuyển khoản, có thể tạo payment ngay trong cùng request để giảm 1 round-trip
+    // từ trình duyệt tới Render. Modal phía client được mở trước nên người dùng không phải
+    // chờ trắng màn hình trong lúc payOS tạo payment link.
+    if (paymentMethod === 'transfer' && req.body.createPayment === true) {
+      try {
+        const payosConfig = await getPayOSConfig();
+        const payos = makePayOS(payosConfig);
+        if (!payos) throw new Error('payOS chưa được cấu hình. Admin tổng hãy vào Cài đặt → Kênh thanh toán payOS để nhập bộ key mới.');
+        const base = publicBaseUrl();
+        const paymentLink = await payos.paymentRequests.create({
+          orderCode: order.rows[0].id,
+          amount: Number(total),
+          description: 'Thanh toan CF Mindset',
+          returnUrl: `${base}/?payos=success&orderCode=${order.rows[0].id}`,
+          cancelUrl: `${base}/?payos=cancel&orderCode=${order.rows[0].id}`,
+        });
+        return res.json({
+          orderId: order.rows[0].id,
+          total,subtotal,discount:automaticDiscount+pointsDiscount,discountPercent,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,status:initialStatus,
+          customer:customer?{id:customer.id,fullName:customer.fullName,points:customer.points}:null,
+          checkoutUrl: paymentLink.checkoutUrl || '',
+          qrCode: paymentLink.qrCode || '',
+          paymentLinkId: paymentLink.paymentLinkId || paymentLink.id || null,
+        });
+      } catch (payError) {
+        console.error('payOS create payment error:', payError);
+        await q(`UPDATE orders SET status='cancelled' WHERE id=$1 AND status='pending'`, [order.rows[0].id]);
+        return res.status(502).json({message:payError?.message||'Không tạo được thanh toán payOS'});
+      }
+    }
+
     res.json({orderId:order.rows[0].id,total,subtotal,discount:automaticDiscount+pointsDiscount,discountPercent,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,status:initialStatus,customer:customer?{id:customer.id,fullName:customer.fullName,points:customer.points}:null});
   }catch(e){await client.query('ROLLBACK');res.status(400).json({message:e.message||'Không tạo được đơn'});}finally{client.release();}
 });
@@ -518,31 +550,32 @@ app.post('/api/payos/cancel-payment/:orderId', auth, async (req,res)=>{
     if(order.payment_method!=='transfer') return res.status(400).json({message:'Đơn này không phải thanh toán chuyển khoản'});
     if(order.status==='cancelled') return res.json({ok:true,cancelled:true,payOSCancelled:true});
     if(order.status==='paid') return res.status(409).json({message:'Đơn hàng đã thanh toán, không thể hủy'});
-    if(order.status!=='pending') return res.status(400).json({message:`Đơn hàng đang ở trạng thái ${order.status}`});
-    const payosConfig=await getPayOSConfig();
-    const payos=makePayOS(payosConfig);
-    if(!payos) return res.status(503).json({message:'payOS chưa được cấu hình'});
+    if(!['pending','cancelling'].includes(order.status)) return res.status(400).json({message:`Đơn hàng đang ở trạng thái ${order.status}`});
 
-    // Hủy payment link trên payOS trước, sau đó mới đánh dấu đơn local là cancelled.
-    // payOS cho phép hủy theo orderCode nên không cần lưu paymentLinkId riêng.
-    let payOSResult;
-    try{
-      payOSResult=await payos.paymentRequests.cancel(orderId, 'Khách hàng hủy thanh toán');
-    }catch(cancelError){
-      console.error('payOS payment link cancel error:', cancelError);
-      return res.status(502).json({message:cancelError?.message || 'Không thể hủy thanh toán trên payOS'});
-    }
+    // Đổi trạng thái local ngay lập tức để UI phản hồi nhanh. Nếu khách chuyển tiền
+    // đúng lúc payOS đang xử lý hủy, webhook vẫn có thể chuyển cancelling -> paid.
+    const marked=await q(`UPDATE orders SET status='cancelling' WHERE id=$1 AND user_id=$2 AND payment_method='transfer' AND status='pending' RETURNING id`,[orderId,req.user.id]);
+    if(!marked.rowCount && order.status!=='cancelling') return res.status(409).json({message:'Đơn hàng đã thay đổi trạng thái'});
 
-    const updated=await q(`UPDATE orders SET status='cancelled' WHERE id=$1 AND user_id=$2 AND payment_method='transfer' AND status='pending' RETURNING id`,[orderId,req.user.id]);
-    if(!updated.rowCount){
-      // Nếu trạng thái local đã thay đổi trong lúc gọi payOS, vẫn báo payOS đã hủy.
-      const latest=await q(`SELECT status FROM orders WHERE id=$1 AND user_id=$2 LIMIT 1`,[orderId,req.user.id]);
-      return res.json({ok:true,cancelled:latest.rows[0]?.status==='cancelled',payOSCancelled:true,payOSStatus:payOSResult?.status||null});
-    }
-    res.json({ok:true,cancelled:true,payOSCancelled:true,payOSStatus:payOSResult?.status||null});
+    res.json({ok:true,cancelled:true,cancelling:true});
+
+    // Hủy payment link ở payOS phía sau, không bắt người dùng chờ API payOS.
+    setImmediate(async()=>{
+      try{
+        const payosConfig=await getPayOSConfig();
+        const payos=makePayOS(payosConfig);
+        if(!payos) throw new Error('payOS chưa được cấu hình');
+        await payos.paymentRequests.cancel(orderId, 'Khach huy');
+        await q(`UPDATE orders SET status='cancelled' WHERE id=$1 AND status='cancelling'`,[orderId]);
+      }catch(cancelError){
+        console.error('payOS payment link cancel error:', cancelError);
+        // Nếu chưa có webhook thanh toán thì cho đơn quay lại pending để không làm mất QR.
+        await q(`UPDATE orders SET status='pending' WHERE id=$1 AND status='cancelling'`,[orderId]).catch(()=>{});
+      }
+    });
   }catch(e){
     console.error('payOS cancel payment error:',e);
-    res.status(500).json({message:e?.message || 'Không hủy được đơn thanh toán'});
+    if(!res.headersSent) res.status(500).json({message:e?.message || 'Không hủy được đơn thanh toán'});
   }
 });
 
@@ -595,7 +628,7 @@ app.post('/api/payos/webhook', async (req,res)=>{
         await client.query('ROLLBACK');
         return res.status(200).send('OK');
       }
-      if(order.status!=='pending'){
+      if(!['pending','cancelling'].includes(order.status)){
         await client.query('ROLLBACK');
         console.log('payOS webhook ignored for non-pending order:', {orderCode,status:order.status});
         return res.status(200).send('OK');

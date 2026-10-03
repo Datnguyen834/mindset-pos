@@ -1199,3 +1199,5 @@ body.modal-open { overflow: hidden; }
 .payos-waiting{display:flex;justify-content:center;align-items:center;gap:9px;margin:14px 0;color:var(--green)}
 .payos-spinner{width:16px;height:16px;border:2px solid #cfd8d3;border-top-color:var(--green);border-radius:50%;animation:payosSpin .8s linear infinite}
 @keyframes payosSpin{to{transform:rotate(360deg)}}
+.payos-qr-loading{width:300px;height:300px;display:grid;place-items:center;align-content:center;gap:10px;text-align:center;color:var(--muted);background:#fff}
+.payos-qr-loading .payos-spinner{width:28px;height:28px}

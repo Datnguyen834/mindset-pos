@@ -998,31 +998,25 @@ async function checkout() {
 
 async function startTransferPayment() {
   const info = checkoutDiscountInfo();
+  transferPaymentOrderId = null;
+  // Mở modal ngay lập tức: người dùng thấy phản hồi ngay, trong lúc Render/payOS tạo QR.
+  renderTransferPaymentModal({orderId:'...', total:info.total, qrCode:null, checkoutUrl:''});
   try {
     const d = await api('/api/orders', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       items: state.cart.map(x => ({menuItemId:x.menuItemId, quantity:x.quantity, sugarPercent:x.sugarPercent, icePercent:x.icePercent, toppings:x.toppings.map(t => ({id:t.id,quantity:t.quantity}))})),
       paymentMethod:'transfer',
       customerId: state.checkoutCustomer?.customer?.id || null,
-      redeemPoints: !!state.checkoutCustomer?.redeem
+      redeemPoints: !!state.checkoutCustomer?.redeem,
+      createPayment: true
     })});
 
-    const p = await api('/api/payos/create-payment', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({orderId:d.orderId})
-    });
-
-    if (!p.qrCode) throw new Error('payOS không trả về mã QR cho đơn này');
-
+    if (!d.qrCode) throw new Error('payOS không trả về mã QR cho đơn này');
     transferPaymentOrderId = d.orderId;
-    renderTransferPaymentModal({
-      orderId:d.orderId,
-      total:d.total,
-      qrCode:p.qrCode,
-      checkoutUrl:p.checkoutUrl
-    });
+    updateTransferPaymentModal({orderId:d.orderId,total:d.total,qrCode:d.qrCode,checkoutUrl:d.checkoutUrl});
     beginTransferPaymentPolling(d.orderId);
   } catch (e) {
+    transferPaymentOrderId = null;
+    closeModal();
     toast(e.message || 'Không tạo được thanh toán chuyển khoản', true);
   }
 }
@@ -1032,38 +1026,48 @@ function renderTransferPaymentModal(p) {
   openModal(`<div class="checkout-loyalty-summary payos-transfer-modal">
     <div class="eyebrow">Thanh toán chuyển khoản</div>
     <h3>Quét mã QR để thanh toán</h3>
-    <p class="muted">Đơn <b>#${p.orderId}</b> · Số tiền <b>${money(p.total)}</b></p>
+    <p class="muted">Đơn <b id="payosOrderNumber">#${p.orderId}</b> · Số tiền <b id="payosOrderTotal">${money(p.total)}</b></p>
     <div class="payos-qr-wrap">
       <div class="payos-qr-stage">
-        <img id="payosQrImage" class="payos-qr-image" alt="Mã QR thanh toán payOS" src="https://quickchart.io/qr?size=300&margin=0&ecLevel=H&text=${encodeURIComponent(p.qrCode)}">
+        <div id="payosQrLoading" class="payos-qr-loading"><span class="payos-spinner"></span><b>Đang tạo mã QR...</b></div>
         <canvas id="${qrId}" width="300" height="300" hidden></canvas>
       </div>
     </div>
     <div class="payos-waiting"><span class="payos-spinner"></span><b>Đang chờ ngân hàng xác nhận...</b></div>
     <div class="cash-summary">
-      <div><span>Tổng bill</span><b>${money(p.total)}</b></div>
-      <div><span>Trạng thái</span><b id="payosPaymentStatus">Chờ thanh toán</b></div>
+      <div><span>Tổng bill</span><b id="payosBillTotal">${money(p.total)}</b></div>
+      <div><span>Trạng thái</span><b id="payosPaymentStatus">Đang tạo mã QR</b></div>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="cancelTransferPayment()">Hủy</button>
     </div>
   </div>`);
+  if (p.qrCode) updateTransferPaymentModal(p);
+}
 
-  const qrImage = document.getElementById('payosQrImage');
-  if (qrImage) {
-    qrImage.addEventListener('error', () => {
-      // Fallback to the bundled/browser QRCode library when the image service is unavailable.
-      if (window.QRCode && document.getElementById(qrId)) {
-        const canvas = document.getElementById(qrId);
-        canvas.hidden = false;
-        qrImage.style.display = 'none';
-        QRCode.toCanvas(canvas, p.qrCode, {
-          width: 300, margin: 2, errorCorrectionLevel: 'M'
-        }, (err) => { if (err) console.error(err); });
-      }
-    }, {once:true});
+function updateTransferPaymentModal(p) {
+  const canvas = document.getElementById('payosQrCanvas');
+  const loading = document.getElementById('payosQrLoading');
+  if ($('#payosOrderNumber')) $('#payosOrderNumber').textContent = `#${p.orderId}`;
+  if ($('#payosOrderTotal')) $('#payosOrderTotal').textContent = money(p.total);
+  if ($('#payosBillTotal')) $('#payosBillTotal').textContent = money(p.total);
+  if ($('#payosPaymentStatus')) $('#payosPaymentStatus').textContent = 'Chờ thanh toán';
+  if (!canvas || !p.qrCode) return;
+  if (!window.QRCode) {
+    if (loading) loading.innerHTML = '<b>Không tải được bộ tạo QR</b>';
+    return;
   }
-  if (qrImage && qrImage.complete && qrImage.naturalWidth === 0) qrImage.dispatchEvent(new Event('error'));
+  QRCode.toCanvas(canvas, p.qrCode, {
+    width: 300, margin: 0, errorCorrectionLevel: 'M'
+  }, (err) => {
+    if (err) {
+      console.error('QR render error:', err);
+      if (loading) loading.innerHTML = '<b>Không thể hiển thị mã QR</b>';
+      return;
+    }
+    canvas.hidden = false;
+    if (loading) loading.style.display = 'none';
+  });
 }
 
 function beginTransferPaymentPolling(orderId) {
@@ -1105,23 +1109,19 @@ async function cancelTransferPayment() {
     transferPaymentPoll = null;
   }
   const orderId = transferPaymentOrderId;
+  transferPaymentOrderId = null;
   if (!orderId) {
-    transferPaymentOrderId = null;
     closeModal();
     return;
   }
 
-  // Chỉ đóng modal sau khi backend đã hủy payment link trên payOS.
-  // Như vậy QR cũ sẽ không còn là một yêu cầu thanh toán đang chờ.
+  // Đóng modal ngay. Backend đánh dấu cancelling tức thì rồi hủy payment link ở payOS nền.
+  closeModal();
+  toast(`Đã gửi yêu cầu hủy thanh toán đơn #${orderId}`);
   try {
     await api(`/api/payos/cancel-payment/${orderId}`, {method:'POST'});
-    transferPaymentOrderId = null;
-    closeModal();
-    toast(`Đã hủy thanh toán đơn #${orderId}`);
   } catch (e) {
-    // Nếu hủy trên payOS thất bại, giữ modal để người dùng biết QR vẫn còn hiệu lực.
-    transferPaymentOrderId = orderId;
-    toast(e.message || 'Không thể hủy thanh toán trên payOS', true);
+    toast(e.message || 'Không gửi được yêu cầu hủy thanh toán', true);
   }
 }
 
