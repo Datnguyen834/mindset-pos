@@ -90,7 +90,7 @@ function auth(req,res,next) {
     const bearer = req.headers.authorization?.startsWith('Bearer ')
       ? req.headers.authorization.slice(7)
       : null;
-    const token = req.cookies.mindset_token || bearer;
+    const token = bearer || req.cookies.mindset_token;
     if (!token) return res.status(401).json({message:'Chưa đăng nhập'});
     req.user = jwt.verify(token, JWT_SECRET);
     next();

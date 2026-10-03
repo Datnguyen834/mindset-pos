@@ -1794,36 +1794,6 @@ async function logout() {
   location.reload();
 }
 
-function togglePowerMenu(){
-  const menu = document.getElementById('powerMenu');
-  const btn = document.getElementById('powerBtn');
-  if(!menu || !btn) return;
-  const willOpen = menu.classList.contains('hidden');
-  menu.classList.toggle('hidden', !willOpen);
-  btn.setAttribute('aria-expanded', String(willOpen));
-}
-
-function closePowerMenu(){
-  const menu = document.getElementById('powerMenu');
-  const btn = document.getElementById('powerBtn');
-  if(!menu || !btn) return;
-  menu.classList.add('hidden');
-  btn.setAttribute('aria-expanded','false');
-}
-
-function reloadApp(){
-  closePowerMenu();
-  location.reload();
-}
-
-document.addEventListener('click', (e)=>{
-  const wrap = document.querySelector('.power-wrap');
-  if(wrap && !wrap.contains(e.target)) closePowerMenu();
-});
-document.addEventListener('keydown', (e)=>{
-  if(e.key === 'Escape') closePowerMenu();
-});
-
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
 
@@ -1871,5 +1841,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,togglePowerMenu,closePowerMenu,reloadApp,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();
