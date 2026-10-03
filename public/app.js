@@ -18,6 +18,157 @@ let state = {
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
 
+
+// ==================== MÈO TƯƠNG TÁC TRÊN HEADER ====================
+// Sprite Kitty có 34 frame, mỗi frame 32x32:
+// idle R 2-9 | walk R 10-13 | jump R 14-15 | fall R 16-17
+// idle L 18-25 | walk L 26-29 | jump L 30-31 | fall L 32-33
+let catController = null;
+
+function initInteractiveCat() {
+  const track = $('#catTrack');
+  const cat = $('#movingCat');
+  if (!track || !cat) return;
+  if (catController) return;
+
+  const W = 64;
+  const FRAME_MS = 105;
+  const WALK_SPEED = 52; // px/s
+  const WALK_FRAMES = { right:[10,11,12,13], left:[26,27,28,29] };
+  const IDLE_FRAMES = { right:[2,3,4,5,6,7,8,9], left:[18,19,20,21,22,23,24,25] };
+  const JUMP_FRAMES = { right:[14,15,16,17], left:[30,31,32,33] };
+
+  let x = 0;
+  let dir = 'right';
+  let mode = 'walk';
+  let framePos = 0;
+  let lastTime = performance.now();
+  let lastFrameTime = lastTime;
+  let reactionToken = 0;
+  let idleTimer = null;
+
+  function trackWidth() {
+    return Math.max(0, track.clientWidth - W);
+  }
+
+  function setFrame(frame) {
+    const scale = W / 32;
+    cat.style.backgroundPosition = `${-(frame * W)}px 0px`;
+    cat.style.backgroundSize = `${34 * W}px ${W}px`;
+    // Giữ mèo luôn nhìn theo hướng di chuyển; sprite đã có đủ trái/phải nên không cần flip.
+  }
+
+  function framesForCurrentMode() {
+    if (mode === 'walk') return WALK_FRAMES[dir];
+    if (mode === 'idle') return IDLE_FRAMES[dir];
+    if (mode === 'reaction') return JUMP_FRAMES[dir];
+    return WALK_FRAMES[dir];
+  }
+
+  function nextFrame(now) {
+    if (now - lastFrameTime < FRAME_MS) return;
+    lastFrameTime = now;
+    const frames = framesForCurrentMode();
+    framePos = (framePos + 1) % frames.length;
+    setFrame(frames[framePos]);
+  }
+
+  function renderPosition() {
+    cat.style.left = `${Math.max(0, Math.min(trackWidth(), x))}px`;
+  }
+
+  function finishReaction(token) {
+    if (token !== reactionToken) return;
+    cat.classList.remove('reacting');
+    cat.style.top = '1px';
+    mode = 'idle';
+    framePos = 0;
+    setFrame(IDLE_FRAMES[dir][0]);
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (token !== reactionToken) return;
+      mode = 'walk';
+      framePos = 0;
+      setFrame(WALK_FRAMES[dir][0]);
+    }, 650);
+  }
+
+  function react() {
+    // Nếu đang phản ứng, click tiếp sẽ không làm animation bị chồng lên nhau.
+    if (mode === 'reaction') return;
+    reactionToken++;
+    const token = reactionToken;
+    mode = 'reaction';
+    framePos = 0;
+    lastFrameTime = performance.now();
+    cat.classList.add('reacting');
+    setFrame(JUMP_FRAMES[dir][0]);
+
+    // Nhảy lên rồi rơi xuống; sprite jump/fall đã có sẵn trong file Kitty.
+    cat.style.top = '-8px';
+    setTimeout(() => {
+      if (token !== reactionToken) return;
+      setFrame(JUMP_FRAMES[dir][1]);
+      cat.style.top = '-13px';
+    }, 105);
+    setTimeout(() => {
+      if (token !== reactionToken) return;
+      setFrame(JUMP_FRAMES[dir][2]);
+      cat.style.top = '-5px';
+    }, 210);
+    setTimeout(() => {
+      if (token !== reactionToken) return;
+      setFrame(JUMP_FRAMES[dir][3]);
+      cat.style.top = '1px';
+    }, 315);
+    setTimeout(() => finishReaction(token), 430);
+  }
+
+  cat.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    react();
+  });
+
+  catController = {
+    stop() { mode = 'idle'; },
+    react,
+  };
+
+  setFrame(WALK_FRAMES[dir][0]);
+  renderPosition();
+
+  function loop(now) {
+    const dt = Math.min(40, now - lastTime);
+    lastTime = now;
+
+    if (mode === 'walk') {
+      x += (dir === 'right' ? 1 : -1) * WALK_SPEED * dt / 1000;
+      const maxX = trackWidth();
+      if (x >= maxX) {
+        x = maxX;
+        dir = 'left';
+        framePos = 0;
+        setFrame(WALK_FRAMES[dir][0]);
+      } else if (x <= 0) {
+        x = 0;
+        dir = 'right';
+        framePos = 0;
+        setFrame(WALK_FRAMES[dir][0]);
+      } else {
+        nextFrame(now);
+      }
+      renderPosition();
+    } else if (mode === 'idle') {
+      nextFrame(now);
+      renderPosition();
+    }
+
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
 // Ô nhập tiền: nhập số tự nhiên, không format khi đang gõ để tuyệt đối không nhảy con trỏ.
 // Khi rời ô (blur), tự thêm dấu chấm hàng nghìn: 100000 -> 100.000.
 function formatMoneyInput(el) {
@@ -149,6 +300,7 @@ async function boot({ animate = false } = {}) {
     const appView = $('#appView');
 
     appView.classList.remove('hidden');
+    initInteractiveCat();
     appView.classList.remove('app-enter');
     void appView.offsetWidth; // restart animation nếu đăng nhập lại
     if (animate) appView.classList.add('app-enter');
