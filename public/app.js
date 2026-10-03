@@ -211,7 +211,10 @@ function productOptionsHtml(itemIndex = 'new', existing = {}) {
 }
 
 function isBakeryProduct(m) {
-  return String(m?.category || '').trim().toLowerCase() === 'bánh ngọt';
+  // Cart item cũ có thể không lưu category, nên tra ngược từ menuItemId.
+  const category = m?.category
+    ?? (m?.menuItemId != null ? state.menu.find(p => Number(p.id) === Number(m.menuItemId))?.category : '');
+  return String(category || '').trim().toLowerCase() === 'bánh ngọt';
 }
 
 function openProduct(id) {
@@ -226,6 +229,7 @@ function openProduct(id) {
       name: m.name,
       price: Number(m.price),
       image: m.image,
+      category: m.category,
       quantity: 1,
       toppings: [],
       sugarPercent: 100,
@@ -250,6 +254,7 @@ function addConfiguredProduct(id) {
   if (!m) return;
   state.cart.push({
     key: crypto.randomUUID(), menuItemId: m.id, name: m.name, price: Number(m.price), image: m.image,
+    category: m.category,
     quantity: 1, toppings: d.toppings || [], sugarPercent: Number($('#sugarPercent').value), icePercent: Number($('#icePercent').value)
   });
   closeModal();
