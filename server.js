@@ -85,12 +85,7 @@ async function initDb() {
 function sign(user) { return jwt.sign({ id:user.id, username:user.username, fullName:user.full_name, role:user.role }, JWT_SECRET, { expiresIn:'12h' }); }
 function auth(req,res,next) {
   try {
-    // Ưu tiên cookie HttpOnly; Authorization là phương án dự phòng để F5
-    // không làm mất phiên nếu trình duyệt/hosting không gửi lại cookie.
-    const bearer = req.headers.authorization?.startsWith('Bearer ')
-      ? req.headers.authorization.slice(7)
-      : null;
-    const token = req.cookies.mindset_token || bearer;
+    const token = req.cookies.mindset_token;
     if (!token) return res.status(401).json({message:'Chưa đăng nhập'});
     req.user = jwt.verify(token, JWT_SECRET);
     next();
@@ -106,10 +101,8 @@ app.post('/api/auth/login', async (req,res)=>{
   const r=await q('SELECT * FROM users WHERE username=$1 AND active=true',[username]);
   if(!r.rowCount || !(await bcrypt.compare(password,r.rows[0].password_hash))) return res.status(401).json({message:'Sai tài khoản hoặc mật khẩu'});
   const u=r.rows[0];
-  const token = sign(u);
-  res.cookie('mindset_token',token,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',path:'/',maxAge:12*60*60*1000});
-  // Trả token thêm cho client để có phương án dự phòng khi reload.
-  res.json({token,user:{id:u.id,username:u.username,fullName:u.full_name,role:u.role}});
+  res.cookie('mindset_token',sign(u),{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:12*60*60*1000});
+  res.json({user:{id:u.id,username:u.username,fullName:u.full_name,role:u.role}});
 });
 app.post('/api/auth/logout',(req,res)=>{res.clearCookie('mindset_token');res.json({ok:true});});
 app.get('/api/auth/me',auth,(req,res)=>res.json({user:{id:req.user.id,username:req.user.username,fullName:req.user.fullName,role:req.user.role}}));
