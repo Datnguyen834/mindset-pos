@@ -47,7 +47,8 @@ function initInteractiveCat() {
   let x = Math.max(0, Math.random() * Math.max(1, innerWidth - W));
   let y = Math.max(0, Math.random() * Math.max(1, innerHeight - W));
   let dirX = Math.random() > .5 ? 1 : -1;
-  let dirY = (Math.random() - .5) * .35;
+  // Hướng di chuyển 2 chiều: mèo có thể đi ngang + chéo lên/xuống.
+  let dirY = (Math.random() - .5) * 1.2;
   let mode = 'walk';
   let framePos = 0;
   let lastTime = performance.now();
@@ -275,7 +276,8 @@ function initInteractiveCat() {
       if (mode === 'walk' || mode === 'run' || mode === 'runningJump') {
         const speed = a.move || 0;
         x += dirX * speed * dt / 1000;
-        y += dirY * speed * 0.22 * dt / 1000;
+        // Cho chuyển động chéo rõ hơn: tốc độ dọc khoảng 55% tốc độ ngang.
+        y += dirY * speed * 0.55 * dt / 1000;
 
         const b = bounds();
         if (x >= b.maxX) { x=b.maxX; dirX=-1; setDirectionClass(); }
@@ -283,9 +285,13 @@ function initInteractiveCat() {
 
         if (y >= b.maxY || y <= 0) {
           y=Math.max(0,Math.min(b.maxY,y));
-          dirY=(Math.random()-.5)*.8;
+          dirY=(Math.random()-.5)*1.2;
         }
-        if (Math.random() < .003) dirY=(Math.random()-.5)*.8;
+        // Thỉnh thoảng đổi góc đi để đường đi tự nhiên hơn.
+        if (Math.random() < .006) {
+          dirY=(Math.random()-.5)*1.2;
+          if (Math.abs(dirY) < .18) dirY = dirY < 0 ? -.35 : .35;
+        }
       }
 
       const finished = nextFrame(now);
