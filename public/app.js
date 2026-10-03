@@ -100,17 +100,37 @@ function go(p) {
   renderPage();
 }
 
-async function boot() {
+async function boot({ animate = false } = {}) {
   try {
     const me = await api('/api/auth/me');
     state.user = me.user;
-    $('#loginView').classList.add('hidden');
-    $('#appView').classList.remove('hidden');
+
+    // Chuẩn bị toàn bộ dữ liệu trước khi mở POS để không thấy màn hình trắng.
+    await loadBase();
+
+    const loginView = $('#loginView');
+    const appView = $('#appView');
+
+    appView.classList.remove('hidden');
+    appView.classList.remove('app-enter');
+    void appView.offsetWidth; // restart animation nếu đăng nhập lại
+    if (animate) appView.classList.add('app-enter');
+
     $('#userName').textContent = state.user.fullName || state.user.username || '-';
     $('#roleText').textContent = state.user.role === 'admin' ? 'Admin' : 'Nhân viên';
     nav();
-    await loadBase();
     renderPage();
+
+    if (animate) {
+      loginView.classList.add('login-exit');
+      setTimeout(() => {
+        loginView.classList.add('hidden');
+        loginView.classList.remove('login-exit');
+        appView.classList.remove('app-enter');
+      }, 390);
+    } else {
+      loginView.classList.add('hidden');
+    }
   } catch {}
 }
 
@@ -1005,15 +1025,34 @@ async function logout() {
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
 
+  const form = e.currentTarget;
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const oldText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Đang vào...';
+  submitBtn.classList.add('login-loading');
+
   // Gọi ngay trong thao tác click/submit của người dùng để trình duyệt
   // cho phép vào fullscreen. Nếu đăng nhập thất bại, thoát fullscreen lại.
   const fullscreenStarted = await enterAppFullscreen();
 
   try {
-    await api('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('#loginUser').value,password:$('#loginPass').value})});
-    await boot();
+    await api('/api/auth/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        username:$('#loginUser').value,
+        password:$('#loginPass').value
+      })
+    });
+
+    // Chỉ sau khi đăng nhập thành công mới chạy transition sang POS.
+    await boot({ animate:true });
   } catch(e) {
     if (fullscreenStarted) await exitAppFullscreen();
+    submitBtn.disabled = false;
+    submitBtn.textContent = oldText;
+    submitBtn.classList.remove('login-loading');
     toast(e.message,true);
   }
 });

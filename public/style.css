@@ -1,5 +1,58 @@
 :root{--green:#17372e;--green2:#285746;--green3:#3c6c59;--cream:#f5f1e8;--line:#dde2de;--text:#17211d;--muted:#66716c;--red:#c94135;--shadow:0 8px 24px rgba(22,45,36,.08)}*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0}body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:#f7f8f7;overflow:hidden}button,input,select{font:inherit}button{cursor:pointer}.hidden{display:none!important}
  .login-page{width:100vw;height:100vh;min-height:620px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(420px,.85fr);background:#0e211b}
+/* Login -> POS transition */
+.login-page{
+  transition:opacity .28s ease, transform .38s cubic-bezier(.22,.8,.24,1), filter .28s ease;
+}
+.login-page.login-exit{
+  opacity:0;
+  transform:scale(1.025);
+  filter:blur(3px);
+  pointer-events:none;
+}
+.app.app-enter{
+  animation:appEnter .48s cubic-bezier(.22,.8,.24,1) both;
+}
+.app.app-enter .sidebar{
+  animation:sidebarEnter .48s cubic-bezier(.22,.8,.24,1) both;
+}
+.app.app-enter .main{
+  animation:mainEnter .52s cubic-bezier(.22,.8,.24,1) .04s both;
+}
+@keyframes appEnter{
+  from{opacity:0}
+  to{opacity:1}
+}
+@keyframes sidebarEnter{
+  from{opacity:0;transform:translateX(-22px)}
+  to{opacity:1;transform:translateX(0)}
+}
+@keyframes mainEnter{
+  from{opacity:0;transform:translateY(14px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.login-loading{
+  position:relative;
+  overflow:hidden;
+}
+.login-loading::after{
+  content:"";
+  position:absolute;
+  left:0;
+  bottom:0;
+  width:100%;
+  height:3px;
+  background:linear-gradient(90deg,transparent,var(--green3),transparent);
+  transform:translateX(-100%);
+  animation:loginProgress .9s ease-in-out infinite;
+}
+@keyframes loginProgress{
+  to{transform:translateX(100%)}
+}
+@media (prefers-reduced-motion:reduce){
+  .login-page,.app.app-enter,.app.app-enter .sidebar,.app.app-enter .main{animation:none!important;transition:none!important}
+}
+
 .login-art{position:relative;overflow:hidden;padding:48px 7%;color:#fff;background:linear-gradient(135deg,#0c211a,#244d3e 60%,#17372e)}
 .login-art:after{content:"";position:absolute;inset:auto -5% -16% -5%;height:50%;background:radial-gradient(ellipse at center,rgba(198,161,75,.18),transparent 65%);pointer-events:none}
 .brand,.side-brand{display:flex;align-items:center;gap:12px}
