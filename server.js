@@ -8,6 +8,7 @@ import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { PayOS } from '@payos/node';
 
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,6 +17,18 @@ const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024 } });
+
+const payosConfigured = Boolean(
+  process.env.PAYOS_CLIENT_ID &&
+  process.env.PAYOS_API_KEY &&
+  process.env.PAYOS_CHECKSUM_KEY
+);
+const payos = payosConfigured ? new PayOS({
+  clientId: process.env.PAYOS_CLIENT_ID,
+  apiKey: process.env.PAYOS_API_KEY,
+  checksumKey: process.env.PAYOS_CHECKSUM_KEY,
+}) : null;
+const publicBaseUrl = () => String(process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
@@ -202,20 +215,22 @@ app.post('/api/orders',auth,async(req,res)=>{
       pointsEarned=Math.floor(total/POINT_EARN_VALUE);
     }
 
-    const order=await client.query(`INSERT INTO orders(user_id,shift_id,customer_id,payment_method,subtotal,discount,automatic_discount,points_discount,points_used,points_earned,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'paid') RETURNING *`,[req.user.id,shiftId,customer?.id || null,paymentMethod,subtotal,automaticDiscount+pointsDiscount,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,total]);
+    // Tiền mặt được hoàn tất ngay. Chuyển khoản phải chờ payOS xác nhận webhook.
+    const initialStatus = paymentMethod === 'transfer' ? 'pending' : 'paid';
+    const order=await client.query(`INSERT INTO orders(user_id,shift_id,customer_id,payment_method,subtotal,discount,automatic_discount,points_discount,points_used,points_earned,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[req.user.id,shiftId,customer?.id || null,paymentMethod,subtotal,automaticDiscount+pointsDiscount,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,total,initialStatus]);
     for(const x of normalized){
       const oi=await client.query(`INSERT INTO order_items(order_id,menu_item_id,item_name,unit_price,quantity,line_total,sugar_percent,ice_percent) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[order.rows[0].id,x.m.id,x.m.name,x.m.price,x.qty,x.line,x.sugarPercent,x.icePercent]);
       for(const t of x.tops) await client.query(`INSERT INTO order_item_toppings(order_item_id,topping_id,topping_name,topping_price,quantity) VALUES($1,$2,$3,$4,$5)`,[oi.rows[0].id,t.id,t.name,t.price,t.quantity]);
     }
 
-    if(customer){
+    if(customer && paymentMethod === 'cash'){
       const newPoints = Math.max(0, Number(customer.points||0) - pointsUsed + pointsEarned);
       await client.query('UPDATE customers SET points=$1,updated_at=NOW() WHERE id=$2',[newPoints,customer.id]);
       customer.points=newPoints;
     }
 
     await client.query('COMMIT');
-    res.json({orderId:order.rows[0].id,total,subtotal,discount:automaticDiscount+pointsDiscount,discountPercent,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,customer:customer?{id:customer.id,fullName:customer.fullName,points:customer.points}:null});
+    res.json({orderId:order.rows[0].id,total,subtotal,discount:automaticDiscount+pointsDiscount,discountPercent,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,status:initialStatus,customer:customer?{id:customer.id,fullName:customer.fullName,points:customer.points}:null});
   }catch(e){await client.query('ROLLBACK');res.status(400).json({message:e.message||'Không tạo được đơn'});}finally{client.release();}
 });
 
@@ -409,6 +424,139 @@ app.get('/api/admin/discount-rules',auth,adminOnly,async(req,res)=>{ const r=awa
 app.post('/api/admin/discount-rules',auth,adminOnly,async(req,res)=>{ const threshold=money(req.body.threshold), percent=Math.min(100,Math.max(0,money(req.body.percent))); if(threshold<=0)return res.status(400).json({message:'Giá trị hóa đơn phải lớn hơn 0'}); if(percent<=0)return res.status(400).json({message:'Phần trăm giảm phải lớn hơn 0'}); const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{rules=JSON.parse(r.rows[0]?.value||'[]')}catch{}; rules=Array.isArray(rules)?rules:[]; rules=rules.filter(x=>money(x.threshold)!==threshold); rules.push({threshold,percent}); rules.sort((a,b)=>a.threshold-b.threshold); await q("INSERT INTO settings(key,value) VALUES('discount_rules',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(rules)]); res.json({rules}); });
 app.delete('/api/admin/discount-rules/:threshold',auth,adminOnly,async(req,res)=>{ const threshold=money(req.params.threshold); const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{rules=JSON.parse(r.rows[0]?.value||'[]')}catch{}; rules=(Array.isArray(rules)?rules:[]).filter(x=>money(x.threshold)!==threshold); await q("INSERT INTO settings(key,value) VALUES('discount_rules',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(rules)]); res.json({rules}); });
 
+// payOS: tạo payment link/QR cho đúng hóa đơn. Order đã được tạo ở trạng thái pending.
+app.post('/api/payos/create-payment', auth, async (req,res)=>{
+  if(!payosConfigured || !payos) return res.status(503).json({message:'payOS chưa được cấu hình trên Render'});
+  const orderId=Number(req.body.orderId);
+  if(!Number.isInteger(orderId) || orderId<=0) return res.status(400).json({message:'Mã đơn không hợp lệ'});
+  try{
+    const r=await q(`SELECT id,total,status,payment_method FROM orders WHERE id=$1 AND user_id=$2 LIMIT 1`,[orderId,req.user.id]);
+    if(!r.rowCount) return res.status(404).json({message:'Không tìm thấy đơn hàng'});
+    const order=r.rows[0];
+    if(order.payment_method!=='transfer') return res.status(400).json({message:'Đơn này không phải thanh toán chuyển khoản'});
+    if(order.status==='paid') return res.status(400).json({message:'Đơn hàng đã thanh toán'});
+    if(order.status!=='pending') return res.status(400).json({message:`Đơn hàng đang ở trạng thái ${order.status}`});
+    if(Number(order.total)<=0) return res.status(400).json({message:'Tổng tiền phải lớn hơn 0'});
+
+    const base=publicBaseUrl();
+    const paymentLink=await payos.paymentRequests.create({
+      orderCode: order.id,
+      amount: Number(order.total),
+      description: `MINDSET#${order.id}`,
+      returnUrl: `${base}/?payos=success&orderCode=${order.id}`,
+      cancelUrl: `${base}/?payos=cancel&orderCode=${order.id}`,
+    });
+
+    res.json({
+      orderId: order.id,
+      total: Number(order.total),
+      checkoutUrl: paymentLink.checkoutUrl || '',
+      qrCode: paymentLink.qrCode || '',
+      paymentLinkId: paymentLink.paymentLinkId || paymentLink.id || null,
+    });
+  }catch(e){
+    console.error('payOS create payment error:',e);
+    res.status(502).json({message:e?.message||'Không tạo được thanh toán payOS'});
+  }
+});
+
+app.post('/api/payos/cancel-payment/:orderId', auth, async (req,res)=>{
+  const orderId=Number(req.params.orderId);
+  if(!Number.isInteger(orderId)) return res.status(400).json({message:'Mã đơn không hợp lệ'});
+  try{
+    const r=await q(`UPDATE orders SET status='cancelled' WHERE id=$1 AND user_id=$2 AND payment_method='transfer' AND status='pending' RETURNING id`,[orderId,req.user.id]);
+    res.json({ok:true,cancelled:Boolean(r.rowCount)});
+  }catch(e){
+    console.error('payOS cancel payment error:',e);
+    res.status(500).json({message:'Không hủy được đơn thanh toán'});
+  }
+});
+
+app.get('/api/payos/payment-status/:orderId', auth, async (req,res)=>{
+  const orderId=Number(req.params.orderId);
+  if(!Number.isInteger(orderId)) return res.status(400).json({message:'Mã đơn không hợp lệ'});
+  try{
+    const r=await q(`SELECT id,total,status,payment_method FROM orders WHERE id=$1 AND user_id=$2 LIMIT 1`,[orderId,req.user.id]);
+    if(!r.rowCount) return res.status(404).json({message:'Không tìm thấy đơn hàng'});
+    res.json({orderId:r.rows[0].id,total:Number(r.rows[0].total),status:r.rows[0].status,paymentMethod:r.rows[0].payment_method});
+  }catch(e){
+    console.error('payOS payment status error:',e);
+    res.status(500).json({message:'Không lấy được trạng thái thanh toán'});
+  }
+});
+
+app.post('/api/payos/webhook', async (req,res)=>{
+  if(!payosConfigured || !payos) return res.status(503).send('payOS not configured');
+  try{
+    const verified=await payos.webhooks.verify(req.body);
+    const data=verified?.data && typeof verified.data==='object' ? verified.data : verified;
+    const orderCode=Number(data?.orderCode);
+    const amount=Number(data?.amount);
+    const code=String(data?.code ?? verified?.code ?? '');
+    const success=verified?.success !== false && code === '00';
+
+    if(!success || !Number.isInteger(orderCode) || orderCode<=0){
+      console.log('payOS webhook ignored:', {success,orderCode,code});
+      return res.status(200).send('OK');
+    }
+
+    const client=await pool.connect();
+    try{
+      await client.query('BEGIN');
+      const or=await client.query(`SELECT id,total,status,customer_id,points_used,points_earned FROM orders WHERE id=$1 AND payment_method='transfer' FOR UPDATE`,[orderCode]);
+      if(!or.rowCount){
+        await client.query('ROLLBACK');
+        console.warn('payOS webhook: order not found',orderCode);
+        return res.status(200).send('OK');
+      }
+      const order=or.rows[0];
+      if(Number(order.total)!==amount){
+        await client.query('ROLLBACK');
+        console.error('payOS webhook amount mismatch:',{orderCode,expected:Number(order.total),received:amount});
+        return res.status(400).send('Amount mismatch');
+      }
+      if(order.status==='paid'){
+        await client.query('ROLLBACK');
+        return res.status(200).send('OK');
+      }
+
+      if(order.customer_id){
+        const cr=await client.query('SELECT id,points FROM customers WHERE id=$1 FOR UPDATE',[order.customer_id]);
+        if(cr.rowCount){
+          const currentPoints=Number(cr.rows[0].points||0);
+          const pointsUsed=Math.min(Number(order.points_used||0),currentPoints);
+          const pointsEarned=Number(order.points_earned||0);
+          const newPoints=Math.max(0,currentPoints-pointsUsed+pointsEarned);
+          await client.query('UPDATE customers SET points=$1,updated_at=NOW() WHERE id=$2',[newPoints,order.customer_id]);
+        }
+      }
+
+      await client.query(`UPDATE orders SET status='paid' WHERE id=$1`,[order.id]);
+      await client.query('COMMIT');
+      console.log('payOS payment confirmed:',{orderCode,amount,reference:data?.reference||null});
+      return res.status(200).send('OK');
+    }catch(e){
+      await client.query('ROLLBACK');
+      throw e;
+    }finally{client.release();}
+  }catch(e){
+    console.error('payOS webhook verify/process error:',e);
+    return res.status(400).send('Invalid webhook');
+  }
+});
+
+app.post('/api/payos/confirm-webhook', auth, adminOnly, async (req,res)=>{
+  if(!payosConfigured || !payos) return res.status(503).json({message:'payOS chưa được cấu hình trên Render'});
+  try{
+    const webhookUrl=`${publicBaseUrl()}/api/payos/webhook`;
+    const result=await payos.webhooks.confirm(webhookUrl);
+    res.json({ok:true,webhookUrl,result});
+  }catch(e){
+    console.error('payOS confirm webhook error:',e);
+    res.status(502).json({message:e?.message||'Không đăng ký được webhook với payOS'});
+  }
+});
+
 app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
   const {from,to}=req.query;
   const today=localDateString();
@@ -422,14 +570,17 @@ app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
 app.get(/.*/,(req,res)=>res.sendFile(path.join(__dirname,'public/index.html')));
 
 async function confirmPayOSWebhookOnStartup() {
-  if (!payosConfigured || !payos) return;
-  const webhookUrl = `${publicBaseUrl()}/api/payos/webhook`;
-  try {
-    const result = await payos.webhooks.confirm(webhookUrl);
-    console.log('payOS webhook ready:', result?.data?.webhookUrl || webhookUrl);
-  } catch (e) {
-    console.error('payOS webhook setup failed:', e?.message || e);
-    console.error('Set PUBLIC_BASE_URL correctly and make sure the Render service is public, then retry from /api/payos/confirm-webhook.');
+  if(!payosConfigured || !payos){
+    console.log('payOS disabled: missing PAYOS_CLIENT_ID/PAYOS_API_KEY/PAYOS_CHECKSUM_KEY');
+    return;
+  }
+  const webhookUrl=`${publicBaseUrl()}/api/payos/webhook`;
+  try{
+    const result=await payos.webhooks.confirm(webhookUrl);
+    console.log('payOS webhook ready:', result?.webhookUrl || result?.data?.webhookUrl || webhookUrl);
+  }catch(e){
+    console.error('payOS webhook setup failed:',e?.message||e);
+    console.error('Check PAYOS_* keys and PUBLIC_BASE_URL, then use /api/payos/confirm-webhook if needed.');
   }
 }
 

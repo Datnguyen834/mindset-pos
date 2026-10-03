@@ -1,25 +1,37 @@
-# Mindset POS V11
+# Mindset POS + payOS
 
-V11 built from the original V10 project. Includes:
-- Login flow preserved from V10
-- 3-column product grid with additional rows and menu-only scrolling
-- Fixed left sidebar and fixed right order/payment panel on desktop
-- Bánh ngọt category and bakery products
-- Centered custom confirmation modal for deleting products, toppings, categories, and locking users
-- Original revenue/order/login logic preserved
+Bản này tích hợp payOS theo luồng QR thanh toán tự động:
 
+1. POS tạo đơn chuyển khoản ở trạng thái `pending`.
+2. Backend gọi `payOS.paymentRequests.create()` để tạo QR/link theo đúng mã đơn và số tiền.
+3. Khách quét QR và chuyển khoản.
+4. payOS gửi webhook về `/api/payos/webhook`.
+5. Backend xác minh webhook bằng `payOS.webhooks.verify()` và kiểm tra mã đơn + số tiền.
+6. Đơn chuyển sang `paid`.
+7. POS polling trạng thái khoảng 1,2 giây/lần và tự hiện thành công.
 
-## payOS tự động xác nhận chuyển khoản
+## Render Environment Variables
 
-Mindset sử dụng `@payos/node` để tạo payment link/QR theo từng hóa đơn và nhận webhook từ payOS. Sau khi ngân hàng xác nhận giao dịch, webhook cập nhật đơn `pending` thành `paid`; POS kiểm tra trạng thái khoảng 1,2 giây/lần và tự hiện “Thanh toán thành công”.
+```text
+NODE_ENV=production
+DATABASE_URL=...
+JWT_SECRET=...
+PAYOS_CLIENT_ID=...
+PAYOS_API_KEY=...
+PAYOS_CHECKSUM_KEY=...
+PUBLIC_BASE_URL=https://mindset-pos.onrender.com
+```
 
-Environment variables:
-- `PAYOS_CLIENT_ID`
-- `PAYOS_API_KEY`
-- `PAYOS_CHECKSUM_KEY`
-- `PUBLIC_BASE_URL` (production: `https://mindset-pos.onrender.com`)
+Không commit các secret lên GitHub.
 
-Webhook endpoint:
-`https://mindset-pos.onrender.com/api/payos/webhook`
+## Webhook
 
-Sau khi deploy và đặt đủ 3 key, admin/manager có thể gọi endpoint xác nhận webhook hoặc payOS có thể được đăng ký webhook bằng API/SDK.
+```text
+https://mindset-pos.onrender.com/api/payos/webhook
+```
+
+Server tự gọi `payOS.webhooks.confirm()` khi khởi động nếu đủ 3 biến `PAYOS_*`. Nếu cần có thể gọi POST `/api/payos/confirm-webhook` bằng tài khoản admin/manager.
+
+## Quan trọng
+
+Nếu bộ key payOS đã từng được gửi trong chat, hãy đổi/rotate key trước khi dùng production.

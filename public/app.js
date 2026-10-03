@@ -1099,13 +1099,21 @@ async function finishPaidTransfer(orderId) {
   }
 }
 
-function cancelTransferPayment() {
+async function cancelTransferPayment() {
   if (transferPaymentPoll) {
     clearInterval(transferPaymentPoll);
     transferPaymentPoll = null;
   }
+  const orderId = transferPaymentOrderId;
   transferPaymentOrderId = null;
   closeModal();
+  if (orderId) {
+    try {
+      await api(`/api/payos/cancel-payment/${orderId}`, {method:'POST'});
+    } catch (e) {
+      console.warn('Không hủy được đơn chờ payOS:', e);
+    }
+  }
 }
 
 function continueCheckoutAfterLoyalty() {
