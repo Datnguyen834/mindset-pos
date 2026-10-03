@@ -32,8 +32,8 @@ function initInteractiveCat() {
   if (!track || !cat || catController) return;
 
   // Sprite sheet 384x288: 12 cột x 9 hàng, mỗi frame 32x32.
-  // Khi hiển thị, mỗi frame được phóng lên 64x64 để nhìn rõ hơn.
-  const W = 64;
+  // Khi hiển thị, mỗi frame được phóng lên 80x80 để nhìn rõ hơn.
+  const W = 80;
   const COLS = 12;
   const FRAME_MS = 105;
   const WALK_SPEED = 58;
@@ -183,8 +183,8 @@ function initInteractiveCat() {
   function randomAction() {
     if (dragging) return scheduleRandomAction();
     const actions = [
-      ['idle', 900], ['sit', 1100], ['crawl', 900],
-      ['idle2', 900], ['play', 1300], ['jump', 700], ['run', 1200]
+      ['idle', 3200], ['sit', 4200], ['crawl', 3000],
+      ['idle2', 3500], ['play', 5200], ['jump', 2200], ['run', 4200]
     ];
     const [action, duration] = actions[Math.floor(Math.random() * actions.length)];
     if (action === 'run') runAction(duration);
@@ -195,14 +195,14 @@ function initInteractiveCat() {
     clearRandomTimer();
     randomTimer = setTimeout(() => {
       randomAction();
-    }, 2800 + Math.random() * 5200);
+    }, 4500 + Math.random() * 7500);
   }
 
   function react() {
     clickCount++;
     const reactions = [
-      ['jump', 720], ['play', 1350], ['sit', 1100],
-      ['crawl', 950], ['idle2', 900], ['run', 1250]
+      ['jump', 2400], ['play', 5200], ['sit', 4200],
+      ['crawl', 3200], ['idle2', 3500], ['run', 4500]
     ];
     const [action, duration] = reactions[(clickCount - 1) % reactions.length];
     cat.classList.add('reacting');
