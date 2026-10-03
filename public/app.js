@@ -53,8 +53,20 @@ function initInteractiveCat() {
     jump: row(8, 6),
   };
 
-  let x = Math.max(0, Math.random() * Math.max(1, track.clientWidth - W));
-  let y = Math.max(0, Math.random() * Math.max(1, track.clientHeight - W));
+  // Sinh mèo ở một vị trí ngẫu nhiên trong vùng trắng ngay từ lúc khởi tạo.
+  // Chừa một khoảng nhỏ quanh mép để mèo không bị dính góc màn hình.
+  function randomSpawnPosition() {
+    const maxX = Math.max(0, track.clientWidth - W);
+    const maxY = Math.max(0, track.clientHeight - W);
+    const padX = Math.min(90, maxX / 4);
+    const padY = Math.min(90, maxY / 4);
+    x = padX + Math.random() * Math.max(1, maxX - padX * 2);
+    y = padY + Math.random() * Math.max(1, maxY - padY * 2);
+  }
+
+  let x = 0;
+  let y = 0;
+  randomSpawnPosition();
   // 8 hướng rõ ràng: trái, phải, lên, xuống và 4 đường chéo.
   // Tốc độ được chuẩn hóa để đi chéo không nhanh hơn đi thẳng.
   const DIRECTIONS = [
@@ -308,7 +320,25 @@ function initInteractiveCat() {
   cat.addEventListener('pointercancel', pointerUp);
   cat.addEventListener('dragstart', e => e.preventDefault());
 
-  catController = { stop() { mode = 'idle'; clearActionTimer(); clearRandomTimer(); clearDirectionTimer(); }, react };
+  catController = {
+    stop() { mode = 'idle'; clearActionTimer(); clearRandomTimer(); clearDirectionTimer(); },
+    react,
+    randomSpawn() {
+      clearActionTimer();
+      clearRandomTimer();
+      reactionToken++;
+      dragging = false;
+      mode = 'walk';
+      randomSpawnPosition();
+      chooseDirection();
+      framePos = 0;
+      lastFrameTime = performance.now();
+      setFrame(ANIM.walk[0]);
+      renderPosition();
+      scheduleDirectionChange();
+      scheduleRandomAction();
+    }
+  };
 
   chooseDirection();
   setFrame(ANIM.walk[0]);
@@ -475,7 +505,15 @@ function setCatVisibility() {
   const track = $('#catTrack');
   if (!track) return;
   // Mèo chỉ xuất hiện trên trang Menu (POS).
-  track.classList.toggle('cat-hidden', state.page !== 'pos');
+  const shouldShow = state.page === 'pos';
+  const wasHidden = track.classList.contains('cat-hidden');
+  track.classList.toggle('cat-hidden', !shouldShow);
+
+  // Mỗi lần quay lại Menu, cho mèo xuất hiện ở một vị trí ngẫu nhiên
+  // trong vùng trắng thay vì luôn quay lại góc/trạng thái cũ.
+  if (shouldShow && wasHidden && catController?.randomSpawn) {
+    requestAnimationFrame(() => catController.randomSpawn());
+  }
 }
 
 function go(p) {
