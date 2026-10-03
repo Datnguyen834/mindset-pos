@@ -18,11 +18,40 @@ let state = {
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
 
-// Ô nhập tiền: cho phép nhập số tự do nhưng hiển thị dấu chấm phân cách hàng nghìn.
+// Ô nhập tiền: cho phép nhập số tự do và hiển thị dấu chấm phân cách hàng nghìn.
+// Giữ nguyên vị trí con trỏ để khi gõ 100000 sẽ ra 100.000, không bị nhảy số.
 function formatMoneyInput(el) {
   if (!el) return;
-  const digits = String(el.value ?? '').replace(/\D/g, '');
-  el.value = digits ? new Intl.NumberFormat('vi-VN').format(Number(digits)) : '';
+
+  const raw = String(el.value ?? '');
+  const cursor = el.selectionStart ?? raw.length;
+
+  // Đếm có bao nhiêu chữ số nằm trước vị trí con trỏ.
+  const digitsBeforeCursor = raw.slice(0, cursor).replace(/\D/g, '').length;
+  const digits = raw.replace(/\D/g, '');
+
+  const formatted = digits
+    ? new Intl.NumberFormat('vi-VN').format(Number(digits))
+    : '';
+
+  el.value = formatted;
+
+  // Đặt con trỏ sau đúng số lượng chữ số người dùng vừa nhập.
+  let newCursor = 0;
+  let digitCount = 0;
+  while (newCursor < formatted.length && digitCount < digitsBeforeCursor) {
+    if (/\d/.test(formatted[newCursor])) digitCount++;
+    newCursor++;
+  }
+
+  // Nếu đang nhập ở cuối thì luôn đưa con trỏ về cuối.
+  if (digitsBeforeCursor >= digits.length) {
+    newCursor = formatted.length;
+  }
+
+  try {
+    el.setSelectionRange(newCursor, newCursor);
+  } catch (_) {}
 }
 
 function moneyInputValue(id) {
