@@ -1193,8 +1193,9 @@ body.modal-open { overflow: hidden; }
 
 /* payOS automatic transfer payment */
 .payos-transfer-modal{text-align:center}
-.payos-qr-wrap{width:324px;height:324px;margin:16px auto;background:#fff;border:1px solid var(--line);border-radius:18px;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
-.payos-qr-wrap canvas{display:block;max-width:300px;max-height:300px}.payos-qr-image{display:block;width:300px;height:300px;object-fit:contain}
+.payos-qr-wrap{width:324px;height:324px;margin:16px auto;background:#fff;border:1px solid var(--line);border-radius:18px;display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:var(--shadow);box-sizing:border-box}
+.payos-qr-wrap canvas{display:block !important;width:280px !important;height:280px !important;max-width:none !important;max-height:none !important;min-width:280px !important;min-height:280px !important;margin:0 !important;position:static !important;transform:none !important}
+.payos-qr-image{display:none !important}
 .payos-waiting{display:flex;justify-content:center;align-items:center;gap:9px;margin:14px 0;color:var(--green)}
 .payos-spinner{width:16px;height:16px;border:2px solid #cfd8d3;border-top-color:var(--green);border-radius:50%;animation:payosSpin .8s linear infinite}
 @keyframes payosSpin{to{transform:rotate(360deg)}}
