@@ -10,7 +10,8 @@ let state = {
   category: 'Tất cả',
   qr: '',
   page: 'pos',
-  paymentMethod: 'cash'
+  paymentMethod: 'cash',
+  userList: null
 };
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
@@ -113,10 +114,17 @@ async function boot() {
 }
 
 async function loadBase() {
-  state.menu = await api('/api/menu');
-  state.categories = await api('/api/categories');
-  state.toppings = await api('/api/toppings');
-  const qr = await api('/api/settings/qr');
+  // Tải song song thay vì chờ từng request xong mới chạy request tiếp theo.
+  const [menu, categories, toppings, qr] = await Promise.all([
+    api('/api/menu'),
+    api('/api/categories'),
+    api('/api/toppings'),
+    api('/api/settings/qr')
+  ]);
+
+  state.menu = menu;
+  state.categories = categories;
+  state.toppings = toppings;
   state.qr = qr.image || '';
 }
 
@@ -609,10 +617,28 @@ async function printOrder(id) {
   openModal(`<div class="invoice"><h1>Mindset</h1><p style="text-align:center">HÓA ĐƠN #${o.id}</p><p>${fmtDate(o.created_at)}<br>Nhân viên: ${esc(o.staff)}</p><table>${o.items.map(x => `<tr><td><strong>${esc(x.item_name)} x${x.quantity}</strong><br><small>Đường ${x.sugar_percent}% · Đá ${x.ice_percent}%<br>${x.toppings.map(t => esc(t.name)).join(', ') || 'Không topping'}</small></td><td class="r">${money(x.line_total)}</td></tr>`).join('')}</table><hr><p class="r"><b>TỔNG: ${money(o.total)}</b></p><p style="text-align:center">Cảm ơn quý khách!</p></div><div class="modal-actions no-print"><button class="btn" onclick="window.print()">In</button><button class="btn" onclick="closeModal()">Đóng</button></div>`);
 }
 
-async function renderUsers() {
-  const users = await api('/api/admin/users');
+function renderUsersTable(users) {
   state.userList = users;
   $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Quản lý nhân viên</h1><p>Tạo tài khoản, đổi mật khẩu và phân quyền.</p></div><button class="btn primary" onclick="userForm()">+ Thêm tài khoản</button></div><div class="table-card"><table class="data-table"><thead><tr><th>Tài khoản</th><th>Họ tên</th><th>Quyền</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>${users.map(u => `<tr><td>${esc(u.username)}</td><td>${esc(u.fullName)}</td><td><b>${u.role === 'admin' ? 'Admin' : 'Nhân viên'}</b></td><td>${u.active ? 'Đang hoạt động' : 'Đã khóa'}</td><td>${u.role === 'admin' ? '<span class="muted">Bảo vệ</span>' : `<button class="btn small" onclick='userForm(${JSON.stringify(u)})'>Sửa</button> <button class="btn small danger" onclick="deleteUser(${u.id})">Xóa</button>`}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+async function renderUsers(forceRefresh = false) {
+  // Có cache thì mở trang ngay, không chờ database.
+  if (!forceRefresh && Array.isArray(state.userList)) {
+    renderUsersTable(state.userList);
+    return;
+  }
+
+  // Hiển thị khung trang ngay cả khi request database chưa trả về.
+  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Quản lý nhân viên</h1><p>Tạo tài khoản, đổi mật khẩu và phân quyền.</p></div><button class="btn primary" onclick="userForm()">+ Thêm tài khoản</button></div><div class="table-card"><div class="empty">Đang tải danh sách nhân viên...</div></div></div>`;
+
+  try {
+    const users = await api('/api/admin/users');
+    renderUsersTable(users);
+  } catch (e) {
+    $('#page').querySelector('.empty')?.replaceChildren(document.createTextNode(e.message || 'Không tải được danh sách nhân viên'));
+    toast(e.message || 'Không tải được dữ liệu', true);
+  }
 }
 
 function userForm(u = {}) {
@@ -625,7 +651,10 @@ async function saveUser(id) {
     if ($('#fPassword').value) body.password = $('#fPassword').value;
     if (!id) { body.username = $('#fUsername').value; if (!body.password) throw new Error('Cần nhập mật khẩu'); }
     await api(id ? `/api/admin/users/${id}` : '/api/admin/users', { method:id ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-    closeModal(); toast('Đã lưu'); renderUsers();
+    closeModal();
+    state.userList = null;
+    toast('Đã lưu');
+    renderUsers(true);
   } catch (e) { toast(e.message, true); }
 }
 
@@ -639,13 +668,16 @@ async function deleteUser(id) {
     onConfirm: async () => {
       await api('/api/admin/users/' + id, {method:'DELETE'});
       toast('Đã xóa tài khoản');
-      await renderUsers();
+      state.userList = null;
+      await renderUsers(true);
     }
   });
 }
 
 async function renderSettings() {
-  const menu = await api('/api/menu');
+  // Menu, danh mục, topping và QR đã được nạp khi boot.
+  // Không gọi database lại mỗi lần chuyển sang tab Cài đặt.
+  const menu = state.menu || [];
   const categories = state.categories || [];
 
   $('#page').innerHTML = `
