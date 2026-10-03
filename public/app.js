@@ -19,11 +19,9 @@ let state = {
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
 
 
-// ==================== MÈO TƯƠNG TÁC TRÊN HEADER ====================
-// Sprite sheet: 384x288 = 12 cột x 9 hàng, mỗi frame gốc 32x32.
-// Các hàng trong asset được giữ nguyên để có thể dùng nhiều hành động:
-// 0 idle, 1 walk, 2-3 run/fast movement, 4 lie/sleep,
-// 5 sit/stand, 6 crouch/low walk, 7 play với bóng len, 8 leap/jump.
+// ==================== MÈO TƯƠNG TÁC TOÀN MÀN HÌNH ====================
+// Dùng các sprite sheet riêng bạn gửi. Mỗi frame gốc là 64x64.
+// IDLE 10 | WALK 15 | RUN 10 | JUMP 3 | RUNNING JUMP 3 | ATTACK 10 | HURT 5.
 let catController = null;
 
 function initInteractiveCat() {
@@ -31,37 +29,29 @@ function initInteractiveCat() {
   const cat = $('#movingCat');
   if (!track || !cat || catController) return;
 
-  // Sprite sheet 384x288: 12 cột x 9 hàng, mỗi frame 32x32.
-  // Khi hiển thị, mỗi frame được phóng lên 80x80 để nhìn rõ hơn.
   const W = 80;
-  const COLS = 12;
-  const FRAME_MS = 105;
-  const WALK_SPEED = 58;
+  const FRAME_MS = 110;
 
-  const row = (r, count = 12, start = 0) =>
-    Array.from({ length: count }, (_, i) => [start + i, r]);
-
-  // Các hàng animation lấy trực tiếp từ sprite sheet bạn gửi.
   const ANIM = {
-    idle: row(0, 9),
-    walk: row(1, 11),
-    run: [...row(2, 12), ...row(3, 6)],
-    crawl: row(4, 10),
-    sit: row(5, 10),
-    idle2: row(6, 10),
-    play: row(7, 11),
-    jump: row(8, 6),
+    idle:        {src:'/assets/cat/cat-idle.png', frames:10, loop:true},
+    walk:        {src:'/assets/cat/cat-walk.png', frames:15, loop:true, move:58},
+    run:         {src:'/assets/cat/cat-run.png', frames:10, loop:true, move:145},
+    jump:        {src:'/assets/cat/cat-jump.png', frames:3, loop:false},
+    runningJump: {src:'/assets/cat/cat-running-jump.png', frames:3, loop:false, move:125},
+    attack:      {src:'/assets/cat/cat-attack.png', frames:10, loop:false},
+    hurt:        {src:'/assets/cat/cat-hurt.png', frames:5, loop:false}
   };
 
-  let x = Math.max(0, Math.random() * Math.max(1, window.innerWidth - W));
-  let y = Math.max(0, Math.random() * Math.max(1, window.innerHeight - W));
+  Object.values(ANIM).forEach(a => { const img = new Image(); img.src = a.src; a.img = img; });
+
+  let x = Math.max(0, Math.random() * Math.max(1, innerWidth - W));
+  let y = Math.max(0, Math.random() * Math.max(1, innerHeight - W));
   let dirX = Math.random() > .5 ? 1 : -1;
   let dirY = (Math.random() - .5) * .35;
   let mode = 'walk';
   let framePos = 0;
   let lastTime = performance.now();
   let lastFrameTime = lastTime;
-  let reactionToken = 0;
   let actionTimer = null;
   let randomTimer = null;
   let dragging = false;
@@ -71,28 +61,26 @@ function initInteractiveCat() {
   let clickCount = 0;
 
   function bounds() {
-    return {
-      maxX: Math.max(0, window.innerWidth - W),
-      maxY: Math.max(0, window.innerHeight - W)
-    };
+    return {maxX:Math.max(0, innerWidth-W), maxY:Math.max(0, innerHeight-W)};
   }
 
   function setDirectionClass() {
     cat.classList.toggle('face-left', dirX < 0);
   }
 
-  function setFrame(frame) {
-    const [col, r] = frame;
-    cat.style.backgroundPosition = `${-(col * W)}px ${-(r * W)}px`;
-    cat.style.backgroundSize = `${COLS * W}px ${9 * W}px`;
+  function setFrame(index) {
+    const a = ANIM[mode] || ANIM.idle;
+    const safeIndex = Math.max(0, Math.min(a.frames - 1, index));
+    cat.style.backgroundImage = `url("${a.src}")`;
+    cat.style.backgroundSize = `${a.frames * W}px ${W}px`;
+    cat.style.backgroundPosition = `${-(safeIndex * W)}px 0px`;
+    cat.dataset.action = mode;
   }
 
-  function nextFrame(now) {
-    if (now - lastFrameTime < FRAME_MS) return;
-    lastFrameTime = now;
-    const frames = ANIM[mode] || ANIM.idle;
-    framePos = (framePos + 1) % frames.length;
-    setFrame(frames[framePos]);
+  function resetFrameClock() {
+    framePos = 0;
+    lastFrameTime = performance.now();
+    setFrame(0);
   }
 
   function renderPosition() {
@@ -104,109 +92,113 @@ function initInteractiveCat() {
   }
 
   function clearActionTimer() {
-    if (actionTimer) {
-      clearTimeout(actionTimer);
-      actionTimer = null;
-    }
+    if (actionTimer) { clearTimeout(actionTimer); actionTimer = null; }
   }
 
   function clearRandomTimer() {
-    if (randomTimer) {
-      clearTimeout(randomTimer);
-      randomTimer = null;
+    if (randomTimer) { clearTimeout(randomTimer); randomTimer = null; }
+  }
+
+  function nextFrame(now) {
+    if (now - lastFrameTime < FRAME_MS) return false;
+    lastFrameTime = now;
+    const a = ANIM[mode] || ANIM.idle;
+    framePos++;
+    if (framePos >= a.frames) {
+      if (a.loop) framePos = 0;
+      else {
+        framePos = a.frames - 1;
+        return true;
+      }
     }
+    setFrame(framePos);
+    return false;
   }
 
-  function resumeWalk() {
-    mode = 'walk';
-    framePos = 0;
-    cat.classList.remove('reacting', 'dragging');
-    lastFrameTime = performance.now();
-    setDirectionClass();
-    setFrame(ANIM.walk[0]);
-    scheduleRandomAction();
-  }
-
-  function playAction(name, duration = 1000, fromClick = false) {
+  function resumeWalk(delay = 400) {
     clearActionTimer();
     clearRandomTimer();
-    reactionToken++;
-    const token = reactionToken;
-    mode = name;
-    framePos = 0;
-    lastFrameTime = performance.now();
-    if (fromClick) cat.classList.add('reacting');
-    setFrame(ANIM[name][0]);
-
+    cat.classList.remove('reacting');
     actionTimer = setTimeout(() => {
-      if (token !== reactionToken || dragging) return;
-      cat.classList.remove('reacting');
-      mode = 'walk';
-      framePos = 0;
-      lastFrameTime = performance.now();
-      setDirectionClass();
-      setFrame(ANIM.walk[0]);
+      if (dragging) return;
       actionTimer = null;
+      mode = 'walk';
+      resetFrameClock();
+      setDirectionClass();
       scheduleRandomAction();
+    }, delay);
+  }
+
+  function playAction(name, duration = 3000, fromClick = false) {
+    clearActionTimer();
+    clearRandomTimer();
+    mode = name;
+    cat.classList.toggle('reacting', !!fromClick);
+    resetFrameClock();
+    actionTimer = setTimeout(() => {
+      actionTimer = null;
+      if (!dragging) resumeWalk(350);
     }, duration);
   }
 
-  function runAction(duration = 1200) {
+  function runAction(duration = 4300, fromClick = false) {
     clearActionTimer();
     clearRandomTimer();
-    reactionToken++;
-    const token = reactionToken;
     mode = 'run';
-    framePos = 0;
-    lastFrameTime = performance.now();
-    cat.classList.add('reacting');
-    setFrame(ANIM.run[0]);
-    const started = performance.now();
+    cat.classList.toggle('reacting', !!fromClick);
+    resetFrameClock();
+    actionTimer = setTimeout(() => {
+      actionTimer = null;
+      if (!dragging) resumeWalk(400);
+    }, duration);
+  }
 
-    function runLoop(now) {
-      if (token !== reactionToken || dragging || mode !== 'run') return;
-      const dt = Math.min(40, now - lastTime);
-      const b = bounds();
-      x += dirX * 145 * dt / 1000;
-      y += dirY * 55 * dt / 1000;
-      if (x >= b.maxX) { x = b.maxX; dirX = -1; setDirectionClass(); }
-      if (x <= 0) { x = 0; dirX = 1; setDirectionClass(); }
-      if (y >= b.maxY || y <= 0) dirY *= -1;
-      renderPosition();
-      nextFrame(now);
-      if (now - started < duration) requestAnimationFrame(runLoop);
-      else resumeWalk();
-    }
-    requestAnimationFrame(runLoop);
+  function runningJumpAction(duration = 3000, fromClick = false) {
+    clearActionTimer();
+    clearRandomTimer();
+    mode = 'runningJump';
+    cat.classList.toggle('reacting', !!fromClick);
+    resetFrameClock();
+    actionTimer = setTimeout(() => {
+      actionTimer = null;
+      if (!dragging) resumeWalk(400);
+    }, duration);
   }
 
   function randomAction() {
     if (dragging) return scheduleRandomAction();
+
     const actions = [
-      ['idle', 3200], ['sit', 4200], ['crawl', 3000],
-      ['idle2', 3500], ['play', 5200], ['jump', 2200], ['run', 4200]
+      ['idle',4200], ['idle',5200], ['walk',5200], ['run',4300],
+      ['jump',2600], ['runningJump',3000], ['attack',3600], ['hurt',2600]
     ];
     const [action, duration] = actions[Math.floor(Math.random() * actions.length)];
+
     if (action === 'run') runAction(duration);
-    else playAction(action, duration, false);
+    else if (action === 'runningJump') runningJumpAction(duration);
+    else if (action === 'walk') {
+      mode = 'walk';
+      resetFrameClock();
+      actionTimer = setTimeout(() => { actionTimer=null; scheduleRandomAction(); }, duration);
+    } else {
+      playAction(action, duration);
+    }
   }
 
   function scheduleRandomAction() {
     clearRandomTimer();
-    randomTimer = setTimeout(() => {
-      randomAction();
-    }, 4500 + Math.random() * 7500);
+    randomTimer = setTimeout(randomAction, 6000 + Math.random() * 9000);
   }
 
   function react() {
     clickCount++;
     const reactions = [
-      ['jump', 2400], ['play', 5200], ['sit', 4200],
-      ['crawl', 3200], ['idle2', 3500], ['run', 4500]
+      ['jump',2800], ['attack',3800], ['runningJump',3000], ['hurt',2700], ['run',4200]
     ];
     const [action, duration] = reactions[(clickCount - 1) % reactions.length];
-    cat.classList.add('reacting');
-    if (action === 'run') runAction(duration);
+
+    if (action === 'run') runAction(duration, true);
+    else if (action === 'runningJump') runningJumpAction(duration, true);
     else playAction(action, duration, true);
   }
 
@@ -215,15 +207,15 @@ function initInteractiveCat() {
     e.preventDefault();
     clearActionTimer();
     clearRandomTimer();
-    reactionToken++;
     dragging = true;
     didDrag = false;
-    mode = 'drag';
+    mode = 'idle';
     cat.classList.add('dragging');
     const r = cat.getBoundingClientRect();
     dragOffsetX = e.clientX - r.left;
     dragOffsetY = e.clientY - r.top;
     cat.setPointerCapture?.(e.pointerId);
+    resetFrameClock();
   }
 
   function pointerMove(e) {
@@ -232,13 +224,11 @@ function initInteractiveCat() {
     const b = bounds();
     const nx = e.clientX - dragOffsetX;
     const ny = e.clientY - dragOffsetY;
-    if (Math.abs(nx - x) + Math.abs(ny - y) > 5) didDrag = true;
+    if (Math.abs(nx-x) + Math.abs(ny-y) > 6) didDrag = true;
+    if (Math.abs(e.movementX || 0) > 0.5) dirX = e.movementX < 0 ? -1 : 1;
     x = Math.max(0, Math.min(b.maxX, nx));
     y = Math.max(0, Math.min(b.maxY, ny));
-    if (Math.abs(e.movementX || 0) > 0.5) dirX = e.movementX < 0 ? -1 : 1;
     setDirectionClass();
-    framePos = 0;
-    setFrame(ANIM.idle[0]);
     renderPosition();
   }
 
@@ -247,17 +237,16 @@ function initInteractiveCat() {
     dragging = false;
     cat.releasePointerCapture?.(e.pointerId);
     cat.classList.remove('dragging');
-    mode = 'walk';
-    framePos = 0;
-    setDirectionClass();
-    setFrame(ANIM.walk[0]);
+
     if (didDrag) {
-      // Không coi thao tác kéo là một cú click.
-      setTimeout(() => { didDrag = false; }, 0);
+      didDrag = false;
+      mode = 'walk';
+      resetFrameClock();
+      setDirectionClass();
+      scheduleRandomAction();
     } else {
       react();
     }
-    scheduleRandomAction();
   }
 
   cat.addEventListener('pointerdown', pointerDown);
@@ -266,10 +255,13 @@ function initInteractiveCat() {
   cat.addEventListener('pointercancel', pointerUp);
   cat.addEventListener('dragstart', e => e.preventDefault());
 
-  catController = { stop() { mode = 'idle'; clearActionTimer(); clearRandomTimer(); }, react };
+  catController = {
+    stop() { clearActionTimer(); clearRandomTimer(); mode='idle'; resetFrameClock(); },
+    react
+  };
 
   setDirectionClass();
-  setFrame(ANIM.walk[0]);
+  setFrame(0);
   renderPosition();
   scheduleRandomAction();
 
@@ -277,22 +269,27 @@ function initInteractiveCat() {
     const dt = Math.min(40, now - lastTime);
     lastTime = now;
 
-    if (!dragging && mode === 'walk') {
-      const b = bounds();
-      x += dirX * WALK_SPEED * dt / 1000;
-      y += dirY * WALK_SPEED * 0.22 * dt / 1000;
-      // Đi lang thang theo cả chiều ngang và dọc, toàn màn hình.
-      if (x >= b.maxX) { x = b.maxX; dirX = -1; setDirectionClass(); }
-      else if (x <= 0) { x = 0; dirX = 1; setDirectionClass(); }
-      if (y >= b.maxY || y <= 0) {
-        y = Math.max(0, Math.min(b.maxY, y));
-        dirY = (Math.random() - .5) * .8;
+    if (!dragging) {
+      const a = ANIM[mode] || ANIM.idle;
+
+      if (mode === 'walk' || mode === 'run' || mode === 'runningJump') {
+        const speed = a.move || 0;
+        x += dirX * speed * dt / 1000;
+        y += dirY * speed * 0.22 * dt / 1000;
+
+        const b = bounds();
+        if (x >= b.maxX) { x=b.maxX; dirX=-1; setDirectionClass(); }
+        else if (x <= 0) { x=0; dirX=1; setDirectionClass(); }
+
+        if (y >= b.maxY || y <= 0) {
+          y=Math.max(0,Math.min(b.maxY,y));
+          dirY=(Math.random()-.5)*.8;
+        }
+        if (Math.random() < .003) dirY=(Math.random()-.5)*.8;
       }
-      if (Math.random() < 0.003) dirY = (Math.random() - .5) * .8;
-      renderPosition();
-      nextFrame(now);
-    } else if (!dragging && mode !== 'run') {
-      nextFrame(now);
+
+      const finished = nextFrame(now);
+      if (finished && !a.loop && !actionTimer) resumeWalk(350);
       renderPosition();
     }
 
