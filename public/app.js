@@ -17,6 +17,23 @@ let state = {
 };
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
+
+// Ô nhập tiền: cho phép nhập số tự do nhưng hiển thị dấu chấm phân cách hàng nghìn.
+function formatMoneyInput(el) {
+  if (!el) return;
+  const digits = String(el.value ?? '').replace(/\D/g, '');
+  el.value = digits ? new Intl.NumberFormat('vi-VN').format(Number(digits)) : '';
+}
+
+function moneyInputValue(id) {
+  const el = $('#' + id);
+  return Number(String(el?.value ?? '').replace(/\D/g, '')) || 0;
+}
+
+document.addEventListener('input', (e) => {
+  if (e.target.matches('input.money-input')) formatMoneyInput(e.target);
+});
+
 const esc = (s) => String(s ?? '').replace(/[&<>'"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]));
 
 // Ngày hiện tại theo đúng múi giờ Việt Nam (UTC+7), độc lập với múi giờ máy/browser.
@@ -874,10 +891,10 @@ function toggleSettingsSection(sectionId) {
 }
 
 function discountForm() {
-  openModal(`<h3>Thêm discount</h3><form id="discountForm"><div class="form-grid"><label>Hóa đơn từ<input id="discountThreshold" type="number" min="1" step="1000" placeholder="100000" required></label><label>Giảm<input id="discountPercent" type="number" min="1" max="100" step="1" placeholder="10" required></label></div><p class="muted">Nhân viên không cần chọn % discount. Hệ thống tự áp dụng mức phù hợp khi thanh toán.</p><div class="modal-actions"><button type="button" class="btn" onclick="closeModal()">Hủy</button><button class="btn primary">Lưu</button></div></form>`);
+  openModal(`<h3>Thêm discount</h3><form id="discountForm"><div class="form-grid"><label>Hóa đơn từ<input id="discountThreshold" class="money-input" type="text" inputmode="numeric" autocomplete="off" placeholder="100.000" required></label><label>Giảm<input id="discountPercent" type="number" min="1" max="100" step="1" placeholder="10" required></label></div><p class="muted">Nhân viên không cần chọn % discount. Hệ thống tự áp dụng mức phù hợp khi thanh toán.</p><div class="modal-actions"><button type="button" class="btn" onclick="closeModal()">Hủy</button><button class="btn primary">Lưu</button></div></form>`);
   $('#discountForm').onsubmit = async e => {
     e.preventDefault();
-    const threshold=Number($('#discountThreshold').value), percent=Number($('#discountPercent').value);
+    const threshold=moneyInputValue('discountThreshold'), percent=Number($('#discountPercent').value);
     try {
       await api('/api/admin/discount-rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({threshold,percent})});
       await loadBase();
@@ -936,7 +953,7 @@ async function deleteCategory(id) {
 
 function menuForm(m = {}) {
   const cats = state.categories || [];
-  openModal(`<h3>${m.id ? 'Sửa món' : 'Thêm món'}</h3><form id="menuForm"><div class="form-grid"><label>Tên món<input id="mName" value="${esc(m.name || '')}" required></label><label>Danh mục<select id="mCat">${cats.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('')}</select></label><label>Giá<input id="mPrice" type="number" value="${m.price || 0}" min="0" required></label><label>Ảnh<input id="mImage" type="file" accept="image/*"></label></div><div class="modal-actions"><button type="button" class="btn" onclick="closeModal()">Hủy</button><button class="btn primary">Lưu</button></div></form></div>`);
+  openModal(`<h3>${m.id ? 'Sửa món' : 'Thêm món'}</h3><form id="menuForm"><div class="form-grid"><label>Tên món<input id="mName" value="${esc(m.name || '')}" required></label><label>Danh mục<select id="mCat">${cats.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('')}</select></label><label>Giá<input id="mPrice" class="money-input" type="text" inputmode="numeric" autocomplete="off" value="${m.price ? new Intl.NumberFormat('vi-VN').format(Number(m.price)) : ''}" placeholder="50.000" required></label><label>Ảnh<input id="mImage" type="file" accept="image/*"></label></div><div class="modal-actions"><button type="button" class="btn" onclick="closeModal()">Hủy</button><button class="btn primary">Lưu</button></div></form></div>`);
   if (m.category) $('#mCat').value = m.category;
   $('#menuForm').onsubmit = e => saveMenu(e, m.id);
 }
@@ -944,7 +961,7 @@ function menuForm(m = {}) {
 async function saveMenu(e, id) {
   e.preventDefault();
   const fd = new FormData();
-  fd.append('name', $('#mName').value); fd.append('category', $('#mCat').value); fd.append('price', $('#mPrice').value);
+  fd.append('name', $('#mName').value); fd.append('category', $('#mCat').value); fd.append('price', String(moneyInputValue('mPrice')));
   if ($('#mImage').files[0]) fd.append('image', $('#mImage').files[0]);
   try { await api(id ? `/api/admin/menu/${id}` : '/api/admin/menu', {method:id ? 'PUT' : 'POST', body:fd}); closeModal(); await loadBase(); state.settingsOpen.menuSettings = true; toast('Đã lưu món'); renderSettings(); }
   catch (e) { toast(e.message, true); }
@@ -969,14 +986,14 @@ function toppingForm(t = {}) {
   openModal(`
     <h3>${t.id ? 'Sửa topping' : 'Thêm topping'}</h3>
     <label>Tên topping<input id="tName" value="${esc(t.name || '')}" required></label>
-    <label>Giá<input id="tPrice" type="number" value="${Number(t.price || 0)}" min="0" required></label>
+    <label>Giá<input id="tPrice" class="money-input" type="text" inputmode="numeric" autocomplete="off" value="${t.price ? new Intl.NumberFormat('vi-VN').format(Number(t.price)) : ''}" placeholder="10.000" required></label>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Hủy</button>
       <button class="btn primary" onclick="saveTop(${t.id || 'null'})">Lưu</button>
     </div>`);
 }
 async function saveTop(id = null) {
-  const body = {name:$('#tName').value.trim(), price:$('#tPrice').value};
+  const body = {name:$('#tName').value.trim(), price:moneyInputValue('tPrice')};
   if (!body.name) return toast('Nhập tên topping', true);
   await api(id ? `/api/admin/toppings/${id}` : '/api/admin/toppings', {
     method:id ? 'PUT' : 'POST',
