@@ -210,11 +210,47 @@ function productOptionsHtml(itemIndex = 'new', existing = {}) {
     </div>`;
 }
 
+function normalizeCategoryName(value) {
+  return String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 function isBakeryProduct(m) {
-  // Cart item cũ có thể không lưu category, nên tra ngược từ menuItemId.
-  const category = m?.category
-    ?? (m?.menuItemId != null ? state.menu.find(p => Number(p.id) === Number(m.menuItemId))?.category : '');
-  return String(category || '').trim().toLowerCase() === 'bánh ngọt';
+  // Hỗ trợ cả món lấy trực tiếp từ menu và món đã nằm trong giỏ.
+  // Một số dữ liệu cũ có thể lưu category khác dấu hoặc category='cake'.
+  let category = m?.category;
+  if (!category && m?.menuItemId && Array.isArray(state.menu)) {
+    category = state.menu.find(item => Number(item.id) === Number(m.menuItemId))?.category;
+  }
+  const cat = normalizeCategoryName(category);
+  return cat === 'banh ngot' || cat === 'cake' || cat.includes('banh ngot');
+}
+
+function cartItemSignature(item) {
+  const toppings = (item.toppings || [])
+    .map(t => ({ id: t.id ?? t.toppingId ?? t.name, name: t.name || '', price: Number(t.price || 0), quantity: Number(t.quantity || 0) }))
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  return JSON.stringify({
+    menuItemId: Number(item.menuItemId),
+    sugarPercent: Number(item.sugarPercent ?? 100),
+    icePercent: Number(item.icePercent ?? 100),
+    toppings
+  });
+}
+
+function addToCartMerged(item) {
+  const incoming = { ...item, quantity: Number(item.quantity || 1), toppings: item.toppings || [] };
+  const signature = cartItemSignature(incoming);
+  const existing = state.cart.find(x => cartItemSignature(x) === signature);
+
+  if (existing) {
+    existing.quantity = Number(existing.quantity || 0) + incoming.quantity;
+  } else {
+    state.cart.push({ ...incoming, key: crypto.randomUUID() });
+  }
 }
 
 function openProduct(id) {
@@ -223,8 +259,7 @@ function openProduct(id) {
 
   // Bánh ngọt không có đường/đá/topping: bấm vào là thêm thẳng vào đơn.
   if (isBakeryProduct(m)) {
-    state.cart.push({
-      key: crypto.randomUUID(),
+    addToCartMerged({
       menuItemId: m.id,
       name: m.name,
       price: Number(m.price),
@@ -248,54 +283,17 @@ function openProduct(id) {
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="addConfiguredProduct(${m.id})">Thêm vào đơn</button></div>`);
 }
 
-function animateProductToCart(imageSrc) {
-  const modalImage = document.querySelector('#modalBox .product-modal-head img');
-  const cart = $('#cartItems');
-  if (!modalImage || !cart) return Promise.resolve();
-
-  const from = modalImage.getBoundingClientRect();
-  const to = cart.getBoundingClientRect();
-  const flyer = document.createElement('img');
-  flyer.src = imageSrc || modalImage.src || '/assets/logo.png';
-  flyer.className = 'fly-to-cart';
-  flyer.style.left = `${from.left}px`;
-  flyer.style.top = `${from.top}px`;
-  flyer.style.width = `${from.width}px`;
-  flyer.style.height = `${from.height}px`;
-  document.body.appendChild(flyer);
-
-  const targetX = to.left + Math.min(42, Math.max(18, to.width * 0.08));
-  const targetY = to.top + 28;
-  const dx = targetX - from.left;
-  const dy = targetY - from.top;
-
-  requestAnimationFrame(() => {
-    flyer.style.transform = `translate(${dx}px, ${dy}px) scale(.28) rotate(8deg)`;
-    flyer.style.opacity = '0.25';
-  });
-
-  return new Promise(resolve => {
-    setTimeout(() => { flyer.remove(); resolve(); }, 560);
-  });
-}
-
-async function addConfiguredProduct(id) {
+function addConfiguredProduct(id) {
   const m = state.menu.find(x => x.id === id);
   const d = window.__productDraft || {};
   if (!m) return;
-
-  state.cart.push({
-    key: crypto.randomUUID(), menuItemId: m.id, name: m.name, price: Number(m.price), image: m.image,
-    category: m.category,
-    quantity: 1, toppings: d.toppings || [], sugarPercent: Number($('#sugarPercent').value), icePercent: Number($('#icePercent').value)
+  addToCartMerged({
+    menuItemId: m.id, name: m.name, price: Number(m.price), image: m.image,
+    quantity: 1, category: m.category, toppings: d.toppings || [],
+    sugarPercent: Number($('#sugarPercent').value), icePercent: Number($('#icePercent').value)
   });
-
-  // Vẽ đơn trước để đích đến luôn tồn tại, nhưng giữ modal trong lúc hiệu ứng chạy.
-  drawCart();
-  const imageSrc = m.image || '/assets/logo.png';
-  const flight = animateProductToCart(imageSrc);
   closeModal();
-  await flight;
+  drawCart();
   toast('Đã thêm món vào đơn');
 }
 
@@ -322,7 +320,7 @@ function drawCart() {
         : `<button class="btn small" onclick="editCartItem(${i})">Tùy chỉnh</button>`;
 
       return `
-      <div class="cart-row">
+      <div class="cart-row${bakery ? ' bakery-cart-row' : ''}">
         <img src="${x.image || '/assets/logo.png'}" alt="">
         <div class="cart-main">
           <strong>${esc(x.name)}</strong>
@@ -608,128 +606,10 @@ async function deleteUser(id) {
 }
 
 async function renderSettings() {
-  const menu = state.menu || [];
+  const menu = await api('/api/menu');
   const categories = state.categories || [];
-
-  $('#page').innerHTML = `
-    <div class="content settings-page">
-      <div class="page-title">
-        <div>
-          <h1>Cài đặt</h1>
-          <p>Chọn đúng mục cần chỉnh sửa, nội dung sẽ mở riêng từng phần.</p>
-        </div>
-      </div>
-
-      <div class="settings-layout">
-        <section class="settings-main">
-          <div class="settings-accordion">
-            <button class="settings-accordion-head" type="button" onclick="toggleSettingsSection('categoriesSection')">
-              <span><strong>Danh mục</strong><small>Thêm, sửa hoặc xóa danh mục món</small></span>
-              <span class="settings-chevron" id="categoriesSectionChevron">⌄</span>
-            </button>
-            <div class="settings-accordion-body hidden" id="categoriesSection">
-              <div class="category-chips">
-                ${categories.map(c => `
-                  <div class="category-chip">
-                    <span>${esc(c.name)}</span>
-                    <button type="button" onclick='categoryForm(${JSON.stringify(c)})'>Sửa</button>
-                    <button type="button" class="danger-text" onclick="deleteCategory(${c.id})">Xóa</button>
-                  </div>
-                `).join('')}
-                <button class="btn category-add-btn" type="button" onclick="categoryForm()">+ Thêm danh mục</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-accordion">
-            <button class="settings-accordion-head" type="button" onclick="toggleSettingsSection('menuSection')">
-              <span><strong>Menu món</strong><small>Thêm, sửa, xóa món và hình ảnh</small></span>
-              <span class="settings-chevron" id="menuSectionChevron">⌄</span>
-            </button>
-            <div class="settings-accordion-body hidden" id="menuSection">
-              <div class="settings-section-head menu-section-head">
-                <h3>Menu món</h3>
-                <button class="btn primary" type="button" onclick="menuForm()">+ Thêm món</button>
-              </div>
-              <div class="table-card settings-table-card">
-                <table class="data-table">
-                  <thead><tr><th>Món</th><th>Danh mục</th><th>Giá</th><th></th></tr></thead>
-                  <tbody>
-                    ${menu.map(m => `
-                      <tr>
-                        <td><img class="avatar" src="${m.image || '/assets/logo.png'}">${esc(m.name)}</td>
-                        <td>${esc(m.category)}</td>
-                        <td>${money(m.price)}</td>
-                        <td>
-                          <button class="btn small" onclick='menuForm(${JSON.stringify(m)})'>Sửa</button>
-                          <button class="btn small danger" onclick="deleteMenu(${m.id})">Xóa</button>
-                        </td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-accordion">
-            <button class="settings-accordion-head" type="button" onclick="toggleSettingsSection('toppingSection')">
-              <span><strong>Topping</strong><small>Thêm hoặc xóa topping dùng cho đồ uống</small></span>
-              <span class="settings-chevron" id="toppingSectionChevron">⌄</span>
-            </button>
-            <div class="settings-accordion-body hidden" id="toppingSection">
-              <div class="settings-section-head">
-                <h3>Topping</h3>
-                <button class="btn" type="button" onclick="toppingForm()">+ Thêm topping</button>
-              </div>
-              <div class="topping-list">
-                ${state.toppings.map(t => `
-                  <div class="topping">
-                    <span>${esc(t.name)} · ${money(t.price)}</span>
-                    <button class="btn small danger" onclick="deleteTop(${t.id})">Xóa</button>
-                  </div>
-                `).join('') || '<div class="empty">Chưa có topping</div>'}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <aside class="settings-side">
-          <section class="section-card qr-settings-card">
-            <h3>QR chuyển khoản</h3>
-            <p class="muted">Ảnh này sẽ hiện cho nhân viên khi chọn chuyển khoản.</p>
-            ${state.qr ? `<img class="qr-preview" src="${state.qr}">` : '<div class="empty">Chưa có QR</div>'}
-            <form id="qrForm" class="qr-upload-form">
-              <input type="file" id="qrFile" accept="image/*">
-              <button class="btn primary" type="submit">Upload QR</button>
-            </form>
-          </section>
-        </aside>
-      </div>
-    </div>`;
-
+  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Cài đặt</h1><p>Quản lý menu, danh mục, topping và QR chuyển khoản.</p></div></div><div class="report-grid"><section class="section-card"><div class="category-management"><div class="category-management-title"><h3>Danh mục</h3></div><div class="category-actions"><div class="category-chips">${categories.map(c => `<div class="category-chip"><span>${esc(c.name)}</span><button type="button" onclick='categoryForm(${JSON.stringify(c)})' aria-label="Sửa danh mục">Sửa</button><button type="button" class="danger-text" onclick="deleteCategory(${c.id})" aria-label="Xóa danh mục">Xóa</button></div>`).join('')}<button class="btn category-add-btn" onclick="categoryForm()">+ Thêm danh mục</button></div></div></div><div class="settings-section-head menu-section-head"><h3>Menu món</h3><button class="btn primary" onclick="menuForm()">+ Thêm món</button></div><div class="table-card" style="margin-top:15px"><table class="data-table"><thead><tr><th>Món</th><th>Danh mục</th><th>Giá</th><th></th></tr></thead><tbody>${menu.map(m => `<tr><td><img class="avatar" src="${m.image || '/assets/logo.png'}">${esc(m.name)}</td><td>${esc(m.category)}</td><td>${money(m.price)}</td><td><button class="btn small" onclick='menuForm(${JSON.stringify(m)})'>Sửa</button> <button class="btn small danger" onclick="deleteMenu(${m.id})">Xóa</button></td></tr>`).join('')}</tbody></table></div></section><section class="section-card"><h3>QR chuyển khoản</h3><p class="muted">Ảnh này sẽ hiện cho nhân viên khi chọn chuyển khoản.</p>${state.qr ? `<img class="qr-preview" src="${state.qr}">` : '<div class="empty">Chưa có QR</div>'}<form id="qrForm" style="margin-top:14px"><input type="file" id="qrFile" accept="image/*"><button class="btn primary" style="margin-top:10px" type="submit">Upload QR</button></form><hr><div class="settings-section-head"><h3>Topping</h3><button class="btn" onclick="toppingForm()">+ Thêm topping</button></div><div>${state.toppings.map(t => `<div class="topping"><span>${esc(t.name)} · ${money(t.price)}</span><button class="btn small danger" onclick="deleteTop(${t.id})">Xóa</button></div>`).join('')}</div></section></div></div>`;
   $('#qrForm').onsubmit = uploadQR;
-}
-
-function toggleSettingsSection(id) {
-  const body = document.getElementById(id);
-  const chevron = document.getElementById(id + 'Chevron');
-  if (!body) return;
-
-  const willOpen = body.classList.contains('hidden');
-  // Chỉ mở một mục tại một thời điểm để trang gọn hơn.
-  ['categoriesSection', 'menuSection', 'toppingSection'].forEach(otherId => {
-    const other = document.getElementById(otherId);
-    const otherChevron = document.getElementById(otherId + 'Chevron');
-    if (!other) return;
-    other.classList.add('hidden');
-    otherChevron?.classList.remove('open');
-  });
-
-  if (willOpen) {
-    body.classList.remove('hidden');
-    chevron?.classList.add('open');
-  }
 }
 
 function categoryForm(c = {}, returnToMenu = false) {

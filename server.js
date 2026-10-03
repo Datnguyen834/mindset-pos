@@ -73,7 +73,7 @@ async function initDb() {
   await q(`INSERT INTO settings(key,value) VALUES('payment_qr','') ON CONFLICT(key) DO NOTHING`);
 }
 
-function sign(user) { return jwt.sign({ id:user.id, username:user.username, fullName:user.full_name, role:user.role }, JWT_SECRET, { expiresIn:'30d' }); }
+function sign(user) { return jwt.sign({ id:user.id, username:user.username, fullName:user.full_name, role:user.role }, JWT_SECRET, { expiresIn:'12h' }); }
 function auth(req,res,next) {
   try {
     const token = req.cookies.mindset_token;
@@ -92,7 +92,7 @@ app.post('/api/auth/login', async (req,res)=>{
   const r=await q('SELECT * FROM users WHERE username=$1 AND active=true',[username]);
   if(!r.rowCount || !(await bcrypt.compare(password,r.rows[0].password_hash))) return res.status(401).json({message:'Sai tài khoản hoặc mật khẩu'});
   const u=r.rows[0];
-  res.cookie('mindset_token',sign(u),{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',path:'/',maxAge:30*24*60*60*1000});
+  res.cookie('mindset_token',sign(u),{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:12*60*60*1000});
   res.json({user:{id:u.id,username:u.username,fullName:u.full_name,role:u.role}});
 });
 app.post('/api/auth/logout',(req,res)=>{res.clearCookie('mindset_token');res.json({ok:true});});
