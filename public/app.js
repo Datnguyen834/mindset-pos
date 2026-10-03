@@ -8,8 +8,6 @@ let state = {
   toppings: [],
   cart: [],
   category: 'Tất cả',
-  bankAccount: { bankId:'', bankName:'', accountNo:'', accountName:'', template:'compact2' },
-  bankList: [],
   payosConfig: {configured:false,source:null,clientId:'',apiKeyMasked:'',checksumKeyMasked:''},
   discountRules: [],
   page: 'pos',
@@ -574,21 +572,17 @@ async function boot({ animate = false } = {}) {
 async function loadBase() {
   // Tải song song thay vì chờ từng request xong mới chạy request tiếp theo.
   const payosPromise = state.user?.role === 'admin' ? api('/api/settings/payos').catch(() => ({configured:false,source:null,clientId:''})) : Promise.resolve({configured:false,source:null,clientId:''});
-  const [menu, categories, toppings, bank, discountRules, banks, payosConfig] = await Promise.all([
+  const [menu, categories, toppings, discountRules, payosConfig] = await Promise.all([
     api('/api/menu'),
     api('/api/categories'),
     api('/api/toppings'),
-    api('/api/settings/bank'),
     api('/api/settings/discount-rules'),
-    api('/api/banks').catch(() => ({banks:[]})),
     payosPromise
   ]);
 
   state.menu = menu;
   state.categories = categories;
   state.toppings = toppings;
-  state.bankAccount = bank.bank || { bankId:'', bankName:'', accountNo:'', accountName:'', template:'compact2' };
-  state.bankList = Array.isArray(banks.banks) ? banks.banks : [];
   state.payosConfig = payosConfig || {configured:false,source:null,clientId:''};
   state.discountRules = Array.isArray(discountRules.rules) ? discountRules.rules : [];
 }
@@ -992,16 +986,6 @@ function syncPaymentUI() {
   if (!cash || !transfer) return;
   cash.classList.toggle('active', state.paymentMethod === 'cash');
   transfer.classList.toggle('active', state.paymentMethod === 'transfer');
-}
-
-function buildVietQrUrl(amount, addInfo='MINDSET') {
-  const b = state.bankAccount || {};
-  if (!b.bankId || !b.accountNo || !b.accountName || !amount) return '';
-  const template = ['compact2','compact','qr_only','print'].includes(b.template) ? b.template : 'compact2';
-  const bankId = encodeURIComponent(b.bankId);
-  const accountNo = encodeURIComponent(b.accountNo);
-  const qs = new URLSearchParams({ amount:String(Math.round(amount)), addInfo:String(addInfo).slice(0,50), accountName:b.accountName });
-  return `https://img.vietqr.io/image/${bankId}-${accountNo}-${template}.png?${qs.toString()}`;
 }
 
 let transferPaymentPoll = null;
@@ -1684,43 +1668,31 @@ async function renderSettings() {
         <section class="section-card settings-qr-card settings-bank-card">
           <button type="button" class="settings-accordion-head" onclick="toggleSettingsSection('bankSettings')">
             <span>
-              <strong>Tài khoản ngân hàng</strong>
-              <small>Cấu hình VietQR · Bấm để xem và chỉnh sửa</small>
+              <strong>Kênh thanh toán payOS</strong>
+              <small>Cấu hình kênh thanh toán · Bấm để xem và chỉnh sửa</small>
             </span>
             <span class="settings-chevron ${state.settingsOpen.bankSettings ? 'open' : ''}" id="bankSettingsChevron">⌄</span>
           </button>
           <div class="settings-accordion-body ${state.settingsOpen.bankSettings ? '' : 'hidden'}" id="bankSettings">
-            <p class="muted">Mỗi lần thanh toán, QR được tạo động theo đúng số tiền thực tế. Admin tổng có thể đổi kênh payOS ngay tại đây.</p>
-            <form id="bankForm" style="margin-top:14px">
+            ${state.user?.role === 'admin' ? `
+            <p class="muted">Nhập bộ key của kênh payOS muốn sử dụng. Key được lưu mã hóa trong cơ sở dữ liệu, không cần sửa biến môi trường trên Render.</p>
+            <form id="payosForm" style="margin-top:14px">
               <div class="form-grid">
-                <label>Ngân hàng<select id="bankId" required><option value="">Chọn ngân hàng</option>${(state.bankList||[]).map(b => `<option value="${esc(String(b.bin||b.id||''))}" data-name="${esc(b.shortName||b.name||'')}" ${String(b.bin||b.id||'')===String(state.bankAccount.bankId||'')?'selected':''}>${esc(b.shortName ? `${b.shortName} · ${b.name}` : b.name || '')}</option>`).join('')}</select></label>
-                <label>Số tài khoản<input id="bankAccountNo" inputmode="numeric" maxlength="19" value="${esc(state.bankAccount.accountNo||'')}" placeholder="Số tài khoản" required></label>
-                <label>Tên tài khoản<input id="bankAccountName" maxlength="50" value="${esc(state.bankAccount.accountName||'')}" placeholder="NGUYEN VAN A" required></label>
-                <label>Mẫu QR<select id="bankTemplate"><option value="compact2" ${state.bankAccount.template==='compact2'?'selected':''}>compact2 · QR + thông tin</option><option value="compact" ${state.bankAccount.template==='compact'?'selected':''}>compact · QR</option><option value="qr_only" ${state.bankAccount.template==='qr_only'?'selected':''}>qr_only · Chỉ QR</option><option value="print" ${state.bankAccount.template==='print'?'selected':''}>print · Đầy đủ</option></select></label>
+                <label>Client ID<input id="payosClientId" value="${esc(state.payosConfig.clientId||'')}" placeholder="Client ID" autocomplete="off"></label>
+                <label>API Key<input id="payosApiKey" type="password" value="" placeholder="${state.payosConfig.apiKeyMasked ? `Đã lưu ${esc(state.payosConfig.apiKeyMasked)}` : 'API Key'}" autocomplete="new-password"></label>
+                <label>Checksum Key<input id="payosChecksumKey" type="password" value="" placeholder="${state.payosConfig.checksumKeyMasked ? `Đã lưu ${esc(state.payosConfig.checksumKeyMasked)}` : 'Checksum Key'}" autocomplete="new-password"></label>
+                <div class="form-hint" style="align-self:end">${state.payosConfig.configured ? `Kênh đang dùng: <b>${esc(state.payosConfig.clientId||'')}</b> · ${state.payosConfig.source === 'database' ? 'được lưu trong hệ thống' : 'đang lấy từ Render'}. Để đổi kênh, nhập key mới.` : 'Chưa có kênh payOS trong hệ thống. Hãy nhập đủ 3 key.'}</div>
               </div>
-              ${state.user?.role === 'admin' ? `
-              <div class="settings-block payos-credentials-block" style="margin-top:16px">
-                <h3>Kênh thanh toán payOS</h3>
-                <p class="settings-block-desc">Nhập bộ key của kênh payOS muốn sử dụng. Key được lưu mã hóa trong cơ sở dữ liệu, không cần sửa biến môi trường trên Render.</p>
-                <div class="form-grid" style="margin-top:10px">
-                  <label>Client ID<input id="payosClientId" value="${esc(state.payosConfig.clientId||'')}" placeholder="Client ID" autocomplete="off"></label>
-                  <label>API Key<input id="payosApiKey" type="password" value="" placeholder="${state.payosConfig.apiKeyMasked ? `Đã lưu ${esc(state.payosConfig.apiKeyMasked)}` : 'API Key'}" autocomplete="new-password"></label>
-                  <label>Checksum Key<input id="payosChecksumKey" type="password" value="" placeholder="${state.payosConfig.checksumKeyMasked ? `Đã lưu ${esc(state.payosConfig.checksumKeyMasked)}` : 'Checksum Key'}" autocomplete="new-password"></label>
-                  <div class="form-hint" style="align-self:end">${state.payosConfig.configured ? `Kênh đang dùng: <b>${esc(state.payosConfig.clientId||'')}</b> · ${state.payosConfig.source === 'database' ? 'được lưu trong hệ thống' : 'đang lấy từ Render'}. Để đổi kênh, nhập key mới.` : 'Chưa có kênh payOS trong hệ thống. Hãy nhập đủ 3 key.'}</div>
-                </div>
-              </div>` : ''}
-              <div id="bankQrPreview" style="margin-top:16px;text-align:center"></div>
-              <button class="btn primary" style="margin-top:10px" type="submit">${state.user?.role === 'admin' ? 'Lưu tài khoản & kênh thanh toán' : 'Lưu tài khoản ngân hàng'}</button>
-            </form>
+              <button class="btn primary" style="margin-top:14px" type="submit">Lưu kênh thanh toán</button>
+            </form>` : `
+            <div class="empty">Kênh payOS đang được cấu hình bởi Admin tổng.</div>`}
           </div>
         </section>
       </div>
     </div>`;
 
-  $('#bankForm').onsubmit = saveBankAccount;
-  const bankIdEl = $('#bankId');
-  if (bankIdEl) bankIdEl.addEventListener('change', () => { const opt=bankIdEl.selectedOptions[0]; if(opt?.dataset?.name) $('#bankAccountName').value = state.bankAccount.accountName || ''; });
-  renderBankPreview();
+  const payosForm = $('#payosForm');
+  if (payosForm) payosForm.onsubmit = savePayOSChannel;
 }
 
 function toggleSettingsSection(sectionId) {
@@ -1866,41 +1838,25 @@ async function deleteTop(id) {
     }
   });
 }
-function renderBankPreview() {
-  const el = $('#bankQrPreview'); if (!el) return;
-  const url = buildVietQrUrl(100000, 'MINDSET DEMO');
-  el.innerHTML = url ? `<div class="muted" style="margin-bottom:8px">Xem trước với 100.000đ</div><img class="qr-preview" src="${url}" alt="VietQR preview">` : '<div class="empty">Nhập đủ thông tin để xem trước VietQR</div>';
-}
-
-async function saveBankAccount(e) {
+async function savePayOSChannel(e) {
   e.preventDefault();
-  const bankIdEl=$('#bankId'); const opt=bankIdEl?.selectedOptions?.[0];
-  const body={ bankId:bankIdEl?.value||'', bankName:opt?.dataset?.name||opt?.textContent?.split(' · ')[0]||'', accountNo:$('#bankAccountNo')?.value||'', accountName:$('#bankAccountName')?.value||'', template:$('#bankTemplate')?.value||'compact2' };
+  if (state.user?.role !== 'admin') return toast('Chỉ Admin tổng được thay đổi kênh payOS', true);
+  const clientId=$('#payosClientId')?.value.trim() || '';
+  const apiKey=$('#payosApiKey')?.value.trim() || '';
+  const checksumKey=$('#payosChecksumKey')?.value.trim() || '';
+  if (!clientId || !apiKey || !checksumKey) return toast('Nhập đầy đủ Client ID, API Key và Checksum Key', true);
   try {
-    const d=await api('/api/admin/payment-bank',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    state.bankAccount=d.bank;
-
-    if (state.user?.role === 'admin') {
-      const clientId=$('#payosClientId')?.value.trim() || '';
-      const apiKey=$('#payosApiKey')?.value.trim() || '';
-      const checksumKey=$('#payosChecksumKey')?.value.trim() || '';
-      const hasNewKeys=clientId || apiKey || checksumKey || !state.payosConfig.configured;
-      if (hasNewKeys) {
-        const pc=await api('/api/admin/payos-credentials',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId,apiKey,checksumKey})});
-        state.payosConfig={configured:true,source:'database',clientId:pc.clientId,apiKeyMasked:apiKey ? `••••${apiKey.slice(-4)}` : state.payosConfig.apiKeyMasked,checksumKeyMasked:checksumKey ? `••••${checksumKey.slice(-4)}` : state.payosConfig.checksumKeyMasked};
-        toast('Đã lưu tài khoản ngân hàng và chuyển sang kênh payOS mới');
-      } else {
-        toast('Đã lưu tài khoản ngân hàng');
-      }
-    } else {
-      toast('Đã lưu tài khoản ngân hàng');
-    }
-    state.settingsOpen.bankSettings=true;
-    renderSettings();
-  } catch(e){ toast(e.message,true); }
+    const pc=await api('/api/admin/payos-credentials',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId,apiKey,checksumKey})});
+    state.payosConfig={configured:true,source:'database',clientId:pc.clientId,apiKeyMasked:`••••${apiKey.slice(-4)}`,checksumKeyMasked:`••••${checksumKey.slice(-4)}`};
+    await renderSettings();
+    state.settingsOpen.bankSettings = true;
+    const body=$('#bankSettings'); if(body) body.classList.remove('hidden');
+    const chevron=$('#bankSettingsChevron'); if(chevron) chevron.classList.add('open');
+    toast('Đã lưu và chuyển sang kênh payOS mới');
+  } catch(e) {
+    toast(e.message || 'Không thể lưu kênh payOS', true);
+  }
 }
-
-async function uploadQR(){ toast('QR tĩnh đã được thay bằng VietQR tự động', true); }
 
 async function renderReports() {
   const today = localDateString();
@@ -2049,5 +2005,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();

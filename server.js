@@ -3,7 +3,6 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import multer from 'multer';
 import pg from 'pg';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -17,7 +16,6 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false });
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024 } });
 
 const publicBaseUrl = () => String(process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 const payosSecretKey = crypto.createHash('sha256').update(String(JWT_SECRET)).digest();
@@ -123,7 +121,6 @@ async function initDb() {
   if (topCount.rows[0].n === 0) {
     await q(`INSERT INTO toppings(name,price) VALUES ('Trân châu',5000),('Thạch',5000),('Kem cheese',8000),('Shot espresso',10000),('Sữa tươi',5000)`);
   }
-  await q(`INSERT INTO settings(key,value) VALUES('payment_bank',$1) ON CONFLICT(key) DO NOTHING`, [JSON.stringify({bankId:'',bankName:'',accountNo:'',accountName:'',template:'compact2'})]);
   await q(`INSERT INTO settings(key,value) VALUES('discount_rules','[]') ON CONFLICT(key) DO NOTHING`);
 }
 
@@ -163,10 +160,7 @@ app.get('/api/auth/me',auth,(req,res)=>res.json({user:{id:req.user.id,username:r
 app.get('/api/menu',auth,async(req,res)=>{ const r=await q('SELECT id,name,category,price,image_data AS image,active FROM menu_items WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/categories',auth,async(req,res)=>{ const r=await q('SELECT id,name FROM categories WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/toppings',auth,async(req,res)=>{ const r=await q('SELECT id,name,price FROM toppings WHERE active=true ORDER BY id'); res.json(r.rows); });
-app.get('/api/settings/bank',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='payment_bank'"); let bank={}; try{ bank=JSON.parse(r.rows[0]?.value||'{}'); }catch{} res.json({bank}); });
 app.get('/api/settings/payos',auth,payOSAdminOnly,async(req,res)=>{ const cfg=await getPayOSConfig(); if(!cfg) return res.json({configured:false,source:null,clientId:''}); const mask=(v)=>v ? `••••${String(v).slice(-4)}` : ''; res.json({configured:true,source:cfg.source,clientId:cfg.clientId||'',apiKeyMasked:mask(cfg.apiKey),checksumKeyMasked:mask(cfg.checksumKey)}); });
-app.get('/api/settings/qr',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='payment_qr'"); res.json({image:r.rows[0]?.value||''}); });
-app.get('/api/banks',auth,async(req,res)=>{ try { const r=await fetch('https://api.vietqr.io/v2/banks'); if(!r.ok) throw new Error('VietQR banks unavailable'); const d=await r.json(); res.json({banks:Array.isArray(d.data)?d.data:[]}); } catch(e) { res.status(502).json({message:'Không tải được danh sách ngân hàng VietQR'}); } });
 app.get('/api/settings/discount-rules',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{ rules=JSON.parse(r.rows[0]?.value||'[]'); }catch{} res.json({rules:Array.isArray(rules)?rules:[]}); });
 
 
@@ -470,8 +464,6 @@ app.put('/api/admin/payos-credentials',auth,payOSAdminOnly,async(req,res)=>{
   }
 });
 
-app.put('/api/admin/payment-bank',auth,adminOnly,async(req,res)=>{ const bankId=String(req.body.bankId||'').trim(); const bankName=String(req.body.bankName||'').trim(); const accountNo=String(req.body.accountNo||'').replace(/\D/g,'').slice(0,19); const accountName=String(req.body.accountName||'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim().slice(0,50); const template=['compact2','compact','qr_only','print'].includes(req.body.template)?req.body.template:'compact2'; if(!bankId)return res.status(400).json({message:'Chọn ngân hàng'}); if(accountNo.length<6)return res.status(400).json({message:'Số tài khoản phải có ít nhất 6 số'}); if(accountName.length<5)return res.status(400).json({message:'Tên tài khoản phải có ít nhất 5 ký tự'}); const bank={bankId,bankName,accountNo,accountName,template}; await q("INSERT INTO settings(key,value) VALUES('payment_bank',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(bank)]); res.json({bank}); });
-app.post('/api/admin/qr',auth,adminOnly,upload.single('qr'),async(req,res)=>{return res.status(410).json({message:'QR tĩnh đã được thay bằng VietQR tự động'});});
 app.get('/api/admin/discount-rules',auth,adminOnly,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{rules=JSON.parse(r.rows[0]?.value||'[]')}catch{} res.json({rules:Array.isArray(rules)?rules:[]}); });
 app.post('/api/admin/discount-rules',auth,adminOnly,async(req,res)=>{ const threshold=money(req.body.threshold), percent=Math.min(100,Math.max(0,money(req.body.percent))); if(threshold<=0)return res.status(400).json({message:'Giá trị hóa đơn phải lớn hơn 0'}); if(percent<=0)return res.status(400).json({message:'Phần trăm giảm phải lớn hơn 0'}); const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{rules=JSON.parse(r.rows[0]?.value||'[]')}catch{}; rules=Array.isArray(rules)?rules:[]; rules=rules.filter(x=>money(x.threshold)!==threshold); rules.push({threshold,percent}); rules.sort((a,b)=>a.threshold-b.threshold); await q("INSERT INTO settings(key,value) VALUES('discount_rules',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(rules)]); res.json({rules}); });
 app.delete('/api/admin/discount-rules/:threshold',auth,adminOnly,async(req,res)=>{ const threshold=money(req.params.threshold); const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{rules=JSON.parse(r.rows[0]?.value||'[]')}catch{}; rules=(Array.isArray(rules)?rules:[]).filter(x=>money(x.threshold)!==threshold); await q("INSERT INTO settings(key,value) VALUES('discount_rules',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(rules)]); res.json({rules}); });
@@ -480,7 +472,7 @@ app.delete('/api/admin/discount-rules/:threshold',auth,adminOnly,async(req,res)=
 app.post('/api/payos/create-payment', auth, async (req,res)=>{
   const payosConfig=await getPayOSConfig();
   const payos=makePayOS(payosConfig);
-  if(!payos) return res.status(503).json({message:'payOS chưa được cấu hình. Admin tổng hãy vào Cài đặt → Tài khoản ngân hàng để nhập bộ key mới.'});
+  if(!payos) return res.status(503).json({message:'payOS chưa được cấu hình. Admin tổng hãy vào Cài đặt → Kênh thanh toán payOS để nhập bộ key mới.'});
   const orderId=Number(req.body.orderId);
   if(!Number.isInteger(orderId) || orderId<=0) return res.status(400).json({message:'Mã đơn không hợp lệ'});
   try{
@@ -496,7 +488,7 @@ app.post('/api/payos/create-payment', auth, async (req,res)=>{
     const paymentLink=await payos.paymentRequests.create({
       orderCode: order.id,
       amount: Number(order.total),
-      description: `MS${order.id}`, // <= 9 chars for channels where the receiving bank account is not linked through payOS
+      description: 'Thanh toan CF Mindset',
       returnUrl: `${base}/?payos=success&orderCode=${order.id}`,
       cancelUrl: `${base}/?payos=cancel&orderCode=${order.id}`,
     });
@@ -671,7 +663,7 @@ async function confirmPayOSWebhookOnStartup() {
     console.log(`payOS webhook ready (${payosConfig.source}):`, result?.webhookUrl || result?.data?.webhookUrl || webhookUrl);
   }catch(e){
     console.error('payOS webhook setup failed:',e?.message||e);
-    console.error('Check the active payOS channel keys in Cài đặt → Tài khoản ngân hàng.');
+    console.error('Check the active payOS channel keys in Cài đặt → Kênh thanh toán payOS.');
   }
 }
 
