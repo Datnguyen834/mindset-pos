@@ -210,9 +210,32 @@ function productOptionsHtml(itemIndex = 'new', existing = {}) {
     </div>`;
 }
 
+function isBakeryProduct(m) {
+  return String(m?.category || '').trim().toLowerCase() === 'bánh ngọt';
+}
+
 function openProduct(id) {
   const m = state.menu.find(x => x.id === id);
   if (!m) return;
+
+  // Bánh ngọt không có đường/đá/topping: bấm vào là thêm thẳng vào đơn.
+  if (isBakeryProduct(m)) {
+    state.cart.push({
+      key: crypto.randomUUID(),
+      menuItemId: m.id,
+      name: m.name,
+      price: Number(m.price),
+      image: m.image,
+      quantity: 1,
+      toppings: [],
+      sugarPercent: 100,
+      icePercent: 100
+    });
+    drawCart();
+    toast('Đã thêm bánh vào đơn');
+    return;
+  }
+
   const temp = { toppings: [], sugarPercent: 100, icePercent: 100 };
   window.__productDraft = temp;
   openModal(`
@@ -249,19 +272,27 @@ function drawCart() {
   if (!state.cart.length) {
     el.innerHTML = '<div class="empty">Chưa có món<br>Chạm vào món để thêm vào đơn</div>';
   } else {
-    el.innerHTML = state.cart.map((x, i) => `
+    el.innerHTML = state.cart.map((x, i) => {
+      const bakery = isBakeryProduct(x);
+      const customText = bakery ? 'Bánh ngọt · Không topping' : toppingText(x);
+      const customizeButton = bakery
+        ? ''
+        : `<button class="btn small" onclick="editCartItem(${i})">Tùy chỉnh</button>`;
+
+      return `
       <div class="cart-row">
         <img src="${x.image || '/assets/logo.png'}" alt="">
         <div class="cart-main">
           <strong>${esc(x.name)}</strong>
-          <div class="cart-custom"><small>${toppingText(x)}</small></div>
+          <div class="cart-custom"><small>${customText}</small></div>
           <div class="qty">
             <button onclick="changeQty(${i},-1)">−</button><span>${x.quantity}</span><button onclick="changeQty(${i},1)">+</button>
-            <button class="btn small" onclick="editCartItem(${i})">Tùy chỉnh</button>
+            ${customizeButton}
           </div>
         </div>
         <div class="cart-price"><b>${money((x.price + x.toppings.reduce((a,t)=>a+t.price*t.quantity,0))*x.quantity)}</b><button class="remove-btn" onclick="removeCart(${i})">×</button></div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
   $('#subtotal').textContent = money(cartSubtotal());
   $('#cartTotal').textContent = money(cartSubtotal());
@@ -274,6 +305,8 @@ function clearCart() { state.cart = []; drawCart(); }
 
 function editCartItem(i) {
   const x = state.cart[i];
+  if (!x) return;
+  if (isBakeryProduct(x)) return;
   window.__editIndex = i;
   window.__productDraft = { sugarPercent: x.sugarPercent, icePercent: x.icePercent, toppings: x.toppings.map(t => ({...t})) };
   openModal(`
