@@ -1193,8 +1193,9 @@ body.modal-open { overflow: hidden; }
 
 /* payOS automatic transfer payment */
 .payos-transfer-modal{text-align:center}
-.payos-qr-wrap{width:324px;height:324px;margin:16px auto;background:#fff;border:1px solid var(--line);border-radius:18px;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
-.payos-qr-wrap canvas{display:block;max-width:300px;max-height:300px}.payos-qr-image{display:block;width:300px;height:300px;object-fit:contain}
+.payos-qr-wrap{width:324px;height:324px;margin:16px auto;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);display:grid;place-items:center;overflow:hidden}
+.payos-qr-stage{width:300px;height:300px;display:grid;place-items:center;margin:0;padding:0;position:static;flex:0 0 300px}
+.payos-qr-wrap canvas,.payos-qr-image{display:block !important;position:static !important;inset:auto !important;transform:none !important;float:none !important;margin:0 !important;padding:0 !important;width:300px !important;height:300px !important;max-width:none !important;max-height:none !important;object-fit:contain;flex:0 0 300px}
 .payos-waiting{display:flex;justify-content:center;align-items:center;gap:9px;margin:14px 0;color:var(--green)}
 .payos-spinner{width:16px;height:16px;border:2px solid #cfd8d3;border-top-color:var(--green);border-radius:50%;animation:payosSpin .8s linear infinite}
 @keyframes payosSpin{to{transform:rotate(360deg)}}

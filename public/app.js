@@ -1046,8 +1046,10 @@ function renderTransferPaymentModal(p) {
     <h3>Quét mã QR để thanh toán</h3>
     <p class="muted">Đơn <b>#${p.orderId}</b> · Số tiền <b>${money(p.total)}</b></p>
     <div class="payos-qr-wrap">
-      <img id="payosQrImage" class="payos-qr-image" alt="Mã QR thanh toán payOS" src="https://quickchart.io/qr?size=320&margin=2&ecLevel=H&text=${encodeURIComponent(p.qrCode)}">
-      <canvas id="${qrId}" width="300" height="300" hidden></canvas>
+      <div class="payos-qr-stage">
+        <img id="payosQrImage" class="payos-qr-image" alt="Mã QR thanh toán payOS" src="https://quickchart.io/qr?size=300&margin=0&ecLevel=H&text=${encodeURIComponent(p.qrCode)}">
+        <canvas id="${qrId}" width="300" height="300" hidden></canvas>
+      </div>
     </div>
     <div class="payos-waiting"><span class="payos-spinner"></span><b>Đang chờ ngân hàng xác nhận...</b></div>
     <div class="cash-summary">
@@ -1056,7 +1058,6 @@ function renderTransferPaymentModal(p) {
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="cancelTransferPayment()">Hủy</button>
-      ${p.checkoutUrl ? `<a class="btn primary" href="${esc(p.checkoutUrl)}" target="_blank" rel="noopener">Mở trang thanh toán</a>` : ''}
     </div>
   </div>`);
 
