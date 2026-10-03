@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS member_rewards (
   tier_key VARCHAR(20) NOT NULL,
   tier_name VARCHAR(40) NOT NULL,
   reward_name VARCHAR(120) NOT NULL,
+  reward_quantity INTEGER NOT NULL DEFAULT 1,
+  remaining_quantity INTEGER NOT NULL DEFAULT 1,
   redeemed_at TIMESTAMPTZ,
   redeemed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -127,6 +129,8 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS sugar_percent INTEGER NOT NULL 
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS ice_percent INTEGER NOT NULL DEFAULT 100;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date DATE;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS birth_date DATE;
+ALTER TABLE member_rewards ADD COLUMN IF NOT EXISTS reward_quantity INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE member_rewards ADD COLUMN IF NOT EXISTS remaining_quantity INTEGER NOT NULL DEFAULT 1;
 
 -- Hard-delete users while preserving historical orders. Deleted users leave their
 -- orders in the database with a NULL user_id instead of blocking account deletion.
@@ -139,6 +143,9 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS automatic_discount INTEGER NOT NULL 
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS points_discount INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS points_used INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS points_earned INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS member_reward_id INTEGER REFERENCES member_rewards(id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS member_reward_quantity INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS member_reward_discount INTEGER NOT NULL DEFAULT 0;
 
 
 -- payOS automatic transfer confirmation metadata

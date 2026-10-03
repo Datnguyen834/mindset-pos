@@ -15,7 +15,7 @@ let state = {
   catVisible: false,
   userList: null,
   settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false, discountSettings: false, bankSettings: false },
-  checkoutCustomer: { customer: null, redeem: false }, pendingCustomerSelection: null, customerPickerMode: 'checkout'
+  checkoutCustomer: { customer: null, redeem: false, coupon: null }, pendingCustomerSelection: null, customerPickerMode: 'checkout'
 };
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
@@ -652,6 +652,7 @@ function renderPOS() {
             <div class="discount-breakdown">
               <div class="discount-subline hidden" id="couponDiscountRow"><span>Discount coupon</span><b id="cartCouponDiscount">-0đ</b></div>
               <div class="discount-subline hidden" id="pointDiscountRow"><span>Discount point</span><b id="cartPointDiscount">-0đ</b></div>
+              <div class="discount-subline hidden" id="memberCouponDiscountRow"><span>Coupon nước</span><b id="cartMemberCouponDiscount">-0đ</b></div>
             </div>
             <div class="payment-choice">
               <div class="payment-label">Phương thức thanh toán</div>
@@ -864,18 +865,40 @@ function cartDiscountInfo(subtotal = cartSubtotal()) {
 
 const CUSTOMER_POINT_EARN_VALUE = 20000;
 const CUSTOMER_POINT_DISCOUNT_VALUE = 1000;
+function memberCouponDiscountInfo() {
+  const c = state.checkoutCustomer?.customer;
+  const applied = state.checkoutCustomer?.coupon;
+  if (!c || !applied || Number(applied.quantity||0) <= 0) return {quantity:0,discount:0};
+  let left = Math.min(Number(applied.quantity||0), Number(applied.remainingQuantityAtApply ?? applied.remainingQuantity ?? 0));
+  let discount = 0;
+  const drinks = state.cart.filter(x => !isBakeryProduct(x)).map(x => ({x, unitLine:(Number(x.price||0)+x.toppings.reduce((a,t)=>a+Number(t.price||0)*Number(t.quantity||0),0))})).sort((a,b)=>a.unitLine-b.unitLine);
+  for (const {x,unitLine} of drinks) {
+    if (left <= 0) break;
+    const take = Math.min(left, Number(x.quantity||0));
+    discount += unitLine * take;
+    left -= take;
+  }
+  const used = Math.min(Number(applied.quantity||0), Number(applied.quantity||0) - left);
+  return {quantity:used,discount};
+}
+
 function checkoutDiscountInfo(subtotal = cartSubtotal()) {
   const base = cartDiscountInfo(subtotal);
   const customer = state.checkoutCustomer?.customer;
   const points = customer && state.checkoutCustomer?.redeem ? Number(customer.points || 0) : 0;
   const pointsUsed = Math.min(points, Math.floor(base.total / CUSTOMER_POINT_DISCOUNT_VALUE));
   const pointsDiscount = pointsUsed * CUSTOMER_POINT_DISCOUNT_VALUE;
+  const afterPoints = Math.max(0, base.total - pointsDiscount);
+  const couponInfo = memberCouponDiscountInfo();
+  const couponDiscount = Math.min(afterPoints, couponInfo.discount);
   return {
     ...base,
     pointsUsed,
     pointsDiscount,
-    total: Math.max(0, base.total - pointsDiscount),
-    amount: base.amount + pointsDiscount
+    memberCouponQty: couponInfo.quantity,
+    memberCouponDiscount: couponDiscount,
+    total: Math.max(0, afterPoints - couponDiscount),
+    amount: base.amount + pointsDiscount + couponDiscount
   };
 }
 
@@ -920,6 +943,8 @@ function drawCart() {
   const couponDiscountEl = $('#cartCouponDiscount');
   const pointDiscountRow = $('#pointDiscountRow');
   const pointDiscountEl = $('#cartPointDiscount');
+  const memberCouponDiscountRow = $('#memberCouponDiscountRow');
+  const memberCouponDiscountEl = $('#cartMemberCouponDiscount');
   const customerBtn = $('#customerCartBtn');
   const customerStatus = $('#customerCartStatus');
 
@@ -935,6 +960,10 @@ function drawCart() {
   if (pointDiscountRow && pointDiscountEl) {
     pointDiscountRow.classList.toggle('hidden', discountInfo.pointsDiscount <= 0);
     pointDiscountEl.textContent = `-${money(discountInfo.pointsDiscount)}`;
+  }
+  if (memberCouponDiscountRow && memberCouponDiscountEl) {
+    memberCouponDiscountRow.classList.toggle('hidden', discountInfo.memberCouponDiscount <= 0);
+    memberCouponDiscountEl.textContent = `-${money(discountInfo.memberCouponDiscount)}`;
   }
 
   if (customerBtn && customerStatus) {
@@ -955,7 +984,7 @@ function drawCart() {
 
 function changeQty(i, d) { state.cart[i].quantity = Math.max(1, state.cart[i].quantity + d); drawCart(); }
 function removeCart(i) { state.cart.splice(i, 1); drawCart(); }
-function clearCart() { state.cart = []; state.checkoutCustomer = { customer: null, redeem: false }; state.pendingCustomerSelection = null; drawCart(); }
+function clearCart() { state.cart = []; state.checkoutCustomer = { customer: null, redeem: false, coupon: null }; state.pendingCustomerSelection = null; drawCart(); }
 
 function editCartItem(i) {
   const x = state.cart[i];
@@ -1037,11 +1066,17 @@ async function startTransferPayment() {
       paymentMethod:'transfer',
       customerId: state.checkoutCustomer?.customer?.id || null,
       redeemPoints: !!state.checkoutCustomer?.redeem,
+      memberRewardId: state.checkoutCustomer?.coupon?.id || null,
+      memberRewardQuantity: memberCouponDiscountInfo().quantity,
       createPayment: true
     })});
 
-    if (!d.qrCode) throw new Error('payOS không trả về mã QR cho đơn này');
     transferPaymentOrderId = d.orderId;
+    if (d.status === 'paid' && Number(d.total) === 0) {
+      await finishPaidTransfer(d.orderId);
+      return;
+    }
+    if (!d.qrCode) throw new Error('payOS không trả về mã QR cho đơn này');
     updateTransferPaymentModal({orderId:d.orderId,total:d.total,qrCode:d.qrCode,qrImage:d.qrImage,checkoutUrl:d.checkoutUrl});
     beginTransferPaymentPolling(d.orderId);
   } catch (e) {
@@ -1116,7 +1151,7 @@ async function finishPaidTransfer(orderId) {
   try {
     const d = await api(`/api/orders/${orderId}`);
     state.cart = [];
-    state.checkoutCustomer = {customer:null,redeem:false};
+    state.checkoutCustomer = {customer:null,redeem:false,coupon:null};
     closeModal();
     renderPOS();
     const customerResult = d.customer_id ? `<div class="customer-success-summary"><span>Khách hàng</span><b>${esc(d.customer_name || '')}</b></div>` : '';
@@ -1204,15 +1239,27 @@ function renderCustomerFoundModal(customer = null, isSearchPreview = false) {
   const canRedeem = possiblePoints > 0 && !alreadyRedeemed && (state.checkoutCustomer?.customer ? true : (isSearchPreview && state.cart.length > 0));
   const redeemButtonClass = canRedeem ? 'customer-point-action active' : 'customer-point-action disabled';
   const redeemLabel = alreadyRedeemed ? 'Đã dùng điểm' : 'Discount point';
-  const tier = c.tierName ? {name:c.tierName} : memberTierInfo(c.totalSpend);
+  const tier = c.tierName ? {name:c.tierName,reward:c.coupon?.rewardName || memberTierInfo(c.totalSpend).reward} : memberTierInfo(c.totalSpend);
   const coupon = c.coupon;
-  const couponHtml = tier.name !== 'Chưa có hạng' ? `
-    <div class="member-coupon-card ${coupon?.redeemedAt ? 'used' : 'available'}">
-      <div class="member-coupon-head"><span>🎁 Quà thành viên</span><b>Hạng ${esc(tier.name)}</b></div>
-      <div class="member-coupon-reward"><strong>${esc(coupon?.rewardName || tier.reward)}</strong><span>${coupon?.redeemedAt ? 'Coupon đã sử dụng trong năm nay' : 'Quý khách có quà. Bạn có muốn nhận không?'}</span></div>
-      ${coupon?.redeemedAt ? '<div class="member-coupon-used">✓ Đã sử dụng</div>' : `<button type="button" class="btn primary member-coupon-use" onclick="useMemberCoupon(${c.id})">Sử dụng coupon</button>`}
-    </div>` : `
-    <div class="member-coupon-card unavailable"><div class="member-coupon-head"><span>🎁 Quà thành viên</span><b>Chưa đạt hạng</b></div><div class="member-coupon-reward"><span>Còn ${money(500000 - Number(c.totalSpend || 0))} để đạt hạng Bạc.</span></div></div>`;
+  const drinkQty = state.cart.filter(x => !isBakeryProduct(x)).reduce((s,x)=>s+Number(x.quantity||0),0);
+  const couponRemaining = Number(coupon?.remainingQuantity || 0);
+  const couponIsDrink = coupon?.tierKey === 'silver' || coupon?.tierKey === 'gold';
+  const appliedQty = Number(state.checkoutCustomer?.coupon?.quantity || 0);
+  const canUseDrinkCoupon = !!coupon && couponIsDrink && couponRemaining > 0 && drinkQty > 0 && !appliedQty;
+  const usableQty = Math.min(couponRemaining, drinkQty);
+  let couponHtml = '';
+  if (tier.name !== 'Chưa có hạng') {
+    if (coupon?.redeemedAt || couponRemaining <= 0) {
+      couponHtml = `<div class="member-coupon-card used"><div class="member-coupon-head"><span>🎁 Quà thành viên</span><b>Hạng ${esc(tier.name)}</b></div><div class="member-coupon-reward"><strong>${esc(coupon?.rewardName || tier.reward)}</strong><span>Coupon đã sử dụng hết trong năm nay</span></div><div class="member-coupon-used">✓ Đã sử dụng</div></div>`;
+    } else if (couponIsDrink) {
+      const status = appliedQty ? `Đã áp dụng ${appliedQty} ly vào hóa đơn` : (drinkQty ? `Có ${usableQty} ly được miễn trên hóa đơn này` : 'Chưa có đồ uống trong hóa đơn');
+      couponHtml = `<div class="member-coupon-card available"><div class="member-coupon-head"><span>🎁 Coupon nước</span><b>Hạng ${esc(tier.name)}</b></div><div class="member-coupon-reward"><strong>${esc(coupon.rewardName)}</strong><span>Còn ${couponRemaining} ly free. ${status}.</span></div>${appliedQty ? '<div class="member-coupon-used">✓ Đã áp dụng vào hóa đơn</div>' : `<button type="button" class="btn primary member-coupon-use ${canUseDrinkCoupon ? '' : 'disabled'}" ${canUseDrinkCoupon ? `onclick="applyMemberCouponToCart()"` : 'disabled'}>${drinkQty ? `Sử dụng coupon (${usableQty} ly)` : 'Chưa có món để sử dụng'}</button>`}</div>`;
+    } else {
+      couponHtml = `<div class="member-coupon-card available"><div class="member-coupon-head"><span>🎁 Quà thành viên</span><b>Hạng ${esc(tier.name)}</b></div><div class="member-coupon-reward"><strong>${esc(coupon.rewardName || tier.reward)}</strong><span>Quà hiện vật — nhân viên xác nhận khi khách nhận quà.</span></div><button type="button" class="btn primary member-coupon-use" onclick="usePhysicalMemberCoupon(${c.id})">Xác nhận nhận quà</button></div>`;
+    }
+  } else {
+    couponHtml = `<div class="member-coupon-card unavailable"><div class="member-coupon-head"><span>🎁 Quà thành viên</span><b>Chưa đạt hạng</b></div><div class="member-coupon-reward"><span>Còn ${money(500000 - Number(c.totalSpend || 0))} để đạt hạng Bạc.</span></div></div>`;
+  }
 
   openModal(`<div class="customer-loyalty-modal">
     <div class="customer-modal-head">
@@ -1227,16 +1274,30 @@ function renderCustomerFoundModal(customer = null, isSearchPreview = false) {
       <div><span>Số điện thoại</span><strong>${esc(c.phone)}</strong></div>
     </div>
     ${couponHtml}
-    <button type="button" class="${redeemButtonClass}" ${canRedeem ? `onclick="chooseCustomerOption(true)"` : 'disabled'}>
-      <span>${redeemLabel}</span>
-    </button>
+    <button type="button" class="${redeemButtonClass}" ${canRedeem ? `onclick="chooseCustomerOption(true)"` : 'disabled'}><span>${redeemLabel}</span></button>
   </div>`);
 }
 
-async function useMemberCoupon(customerId) {
+function applyMemberCouponToCart() {
+  const c = state.pendingCustomerSelection || state.checkoutCustomer?.customer;
+  const coupon = c?.coupon;
+  if (!c || !coupon) return toast('Chưa chọn khách hàng', true);
+  if (!(coupon.tierKey === 'silver' || coupon.tierKey === 'gold')) return toast('Coupon này không phải coupon nước', true);
+  const drinkQty = state.cart.filter(x => !isBakeryProduct(x)).reduce((s,x)=>s+Number(x.quantity||0),0);
+  if (drinkQty <= 0) return toast('Hãy chọn ít nhất một ly nước trước', true);
+  const qty = Math.min(Number(coupon.remainingQuantity||0), drinkQty);
+  if (qty <= 0) return toast('Coupon đã được sử dụng hết', true);
+  state.checkoutCustomer = { customer: c, redeem: !!state.checkoutCustomer?.redeem, coupon: {id:Number(coupon.id),tierKey:coupon.tierKey,rewardName:coupon.rewardName,remainingQuantityAtApply:Number(coupon.remainingQuantity||0),quantity:qty} };
+  state.pendingCustomerSelection = null;
+  closeModal();
+  drawCart();
+  toast(`Đã áp dụng ${qty} ly nước miễn phí vào hóa đơn`);
+}
+
+async function usePhysicalMemberCoupon(customerId) {
   try {
     const d = await api(`/api/customers/${customerId}/reward/use`, {method:'POST'});
-    toast(`Đã sử dụng coupon: ${d.reward.rewardName}`);
+    toast(`Đã xác nhận quà: ${d.reward.rewardName}`);
     if (state.pendingCustomerSelection?.id === customerId) {
       state.pendingCustomerSelection = {...state.pendingCustomerSelection, coupon:d.reward};
       renderCustomerFoundModal(state.pendingCustomerSelection, true);
@@ -1252,7 +1313,7 @@ async function useMemberCoupon(customerId) {
 function chooseCustomerOption(redeem) {
   // Nếu đang xem kết quả tìm kiếm, chỉ khi bấm Discount point mới ghi nhận khách vào đơn.
   if (state.pendingCustomerSelection) {
-    state.checkoutCustomer = { customer: state.pendingCustomerSelection, redeem: false };
+    state.checkoutCustomer = { customer: state.pendingCustomerSelection, redeem: false, coupon: state.checkoutCustomer?.coupon || null };
     state.pendingCustomerSelection = null;
   }
   state.checkoutCustomer.redeem = !!redeem;
@@ -1295,7 +1356,7 @@ async function createCustomerAndContinue(phone) {
   if (!birthDate) return toast('Nhập ngày tháng năm sinh', true);
   try {
     const d = await api('/api/customers', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({phone,fullName,birthDate})});
-    state.checkoutCustomer = { customer: d.customer, redeem: false };
+    state.checkoutCustomer = { customer: d.customer, redeem: false, coupon: null };
     if (state.customerPickerMode === 'cart') {
       closeModal();
       drawCart();
@@ -1308,7 +1369,7 @@ async function createCustomerAndContinue(phone) {
 
 function closeCustomerPicker() {
   if (state.pendingCustomerSelection) {
-    state.checkoutCustomer = { customer: state.pendingCustomerSelection, redeem: false };
+    state.checkoutCustomer = { customer: state.pendingCustomerSelection, redeem: false, coupon: state.checkoutCustomer?.coupon || null };
     state.pendingCustomerSelection = null;
     drawCart();
     toast(`Đã chọn khách hàng ${state.checkoutCustomer.customer.fullName}`);
@@ -1317,7 +1378,7 @@ function closeCustomerPicker() {
 }
 
 function skipCustomerAndContinue() {
-  state.checkoutCustomer = { customer: null, redeem: false };
+  state.checkoutCustomer = { customer: null, redeem: false, coupon: null };
   if (state.customerPickerMode === 'cart') {
     closeModal();
     drawCart();
@@ -1378,11 +1439,13 @@ async function completePayment(method, cashMeta = null) {
       cashReceived: cashMeta?.received || null,
       cashChange: cashMeta?.change || null,
       customerId: state.checkoutCustomer?.customer?.id || null,
-      redeemPoints: !!state.checkoutCustomer?.redeem
+      redeemPoints: !!state.checkoutCustomer?.redeem,
+      memberRewardId: state.checkoutCustomer?.coupon?.id || null,
+      memberRewardQuantity: memberCouponDiscountInfo().quantity
     })});
     const customerResult = d.customer ? `<div class="customer-success-summary"><span>Khách hàng</span><b>${esc(d.customer.fullName)}</b><span>Ngày sinh</span><b>${fmtBirthDate(d.customer.birthDate)}</b><span>Điểm hiện tại</span><b>${Number(d.customer.points || 0)} điểm</b>${d.pointsUsed ? `<span>Đã trừ</span><b>${d.pointsUsed} điểm (-${money(d.pointsDiscount)})</b>` : ''}${d.pointsEarned ? `<span>Tích thêm</span><b>+${d.pointsEarned} điểm</b>` : ''}</div>` : '';
     state.cart = [];
-    state.checkoutCustomer = {customer:null,redeem:false};
+    state.checkoutCustomer = {customer:null,redeem:false,coupon:null};
     closeModal();
     renderPOS();
     openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.orderId}</b> · Discount <b>${d.discountPercent || 0}%</b>${d.pointsDiscount ? ` · Điểm giảm <b>-${money(d.pointsDiscount)}</b>` : ''} · Tổng tiền <b class="modal-total">${money(d.total)}</b></p>${customerResult}${method === 'cash' && cashMeta ? `<div class="cash-success-summary"><div><span>Tiền khách đưa</span><b>${money(cashMeta.received)}</b></div><div><span>Tiền thối lại</span><b>${money(cashMeta.change)}</b></div></div>` : ''}<p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.orderId})">In bill</button></div>`);
@@ -1618,7 +1681,9 @@ async function searchMember() {
 function renderMemberResult(m) {
   const tier = m.tierName ? {name:m.tierName,reward:m.coupon?.rewardName || memberTierInfo(m.totalSpend).reward} : memberTierInfo(m.totalSpend);
   const coupon = m.coupon;
-  const couponHtml = tier.name !== 'Chưa có hạng' ? `<div class="member-coupon-card ${coupon?.redeemedAt ? 'used' : 'available'}"><div class="member-coupon-head"><span>🎁 Coupon</span><b>Hạng ${esc(tier.name)}</b></div><div class="member-coupon-reward"><strong>${esc(coupon?.rewardName || tier.reward)}</strong><span>${coupon?.redeemedAt ? 'Đã sử dụng trong năm nay' : 'Đang sẵn sàng để nhân viên sử dụng'}</span></div>${coupon?.redeemedAt ? '<div class="member-coupon-used">✓ Đã sử dụng</div>' : `<button class="btn primary member-coupon-use" onclick="useMemberCoupon(${m.id})">Sử dụng coupon</button>`}</div>` : '';
+  const couponRemaining = Number(coupon?.remainingQuantity || 0);
+  const couponIsDrink = coupon?.tierKey === 'silver' || coupon?.tierKey === 'gold';
+  const couponHtml = tier.name !== 'Chưa có hạng' ? `<div class="member-coupon-card ${coupon?.redeemedAt || couponRemaining<=0 ? 'used' : 'available'}"><div class="member-coupon-head"><span>🎁 Coupon</span><b>Hạng ${esc(tier.name)}</b></div><div class="member-coupon-reward"><strong>${esc(coupon?.rewardName || tier.reward)}</strong><span>${coupon?.redeemedAt || couponRemaining<=0 ? 'Đã sử dụng hết trong năm nay' : (couponIsDrink ? `Còn ${couponRemaining} ly nước free — chỉ sử dụng khi có hóa đơn.` : 'Quà hiện vật — nhân viên xác nhận khi khách nhận quà.')}</span></div>${coupon?.redeemedAt || couponRemaining<=0 ? '<div class="member-coupon-used">✓ Đã sử dụng</div>' : (couponIsDrink ? '<button class="btn member-coupon-use" disabled>Chỉ sử dụng khi có hóa đơn</button>' : `<button class="btn primary member-coupon-use" onclick="usePhysicalMemberCoupon(${m.id})">Xác nhận nhận quà</button>`)}</div>` : '';
   $('.member-result-card').innerHTML = `<div class="member-detail-grid">
     <div><span>Số điện thoại</span><b>${esc(m.phone)}</b></div>
     <div><span>Họ tên</span><b>${esc(m.fullName)}</b></div>
@@ -2127,5 +2192,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,toggleCatVisibility,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,searchMember,memberForm,saveMember,useMemberCoupon,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,toggleCatVisibility,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,searchMember,memberForm,saveMember,usePhysicalMemberCoupon,applyMemberCouponToCart,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();

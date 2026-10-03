@@ -85,6 +85,8 @@ async function initDb() {
     await q(`ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','manager','staff'))`);
   } catch {}
   await q(`UPDATE users SET role='manager' WHERE role='admin' AND username <> 'admin'`);
+  await q(`UPDATE member_rewards SET reward_quantity=2, remaining_quantity=CASE WHEN redeemed_at IS NOT NULL THEN 0 ELSE 2 END WHERE tier_key='gold' AND reward_quantity=1 AND remaining_quantity<=1`);
+  await q(`UPDATE member_rewards SET remaining_quantity = 0 WHERE redeemed_at IS NOT NULL`);
 
   const menuCount = await q('SELECT COUNT(*)::int AS n FROM menu_items');
   if (menuCount.rows[0].n === 0) {
@@ -176,24 +178,26 @@ const MEMBER_TIERS = [
   { key:'silver', name:'Bạc', threshold:500000, reward:'1 ly nước free' },
 ];
 function memberTierForSpend(totalSpend){ return MEMBER_TIERS.find(t => Number(totalSpend||0) >= t.threshold) || null; }
+function memberRewardQuantity(tierKey){ return tierKey === 'gold' ? 2 : 1; }
+function memberRewardIsDrink(tierKey){ return tierKey === 'silver' || tierKey === 'gold'; }
 async function syncMemberCoupon(customerId, totalSpend, db = pool) {
   const tier = memberTierForSpend(totalSpend);
   if (!tier) return null;
   const year = new Date().getFullYear();
   const client = db === pool ? null : db;
   const run = async (sql, params) => client ? client.query(sql, params) : q(sql, params);
-  const existing = await run('SELECT id,tier_key,tier_name,reward_name,redeemed_at,earned_year FROM member_rewards WHERE customer_id=$1 AND earned_year=$2 ORDER BY id DESC LIMIT 1',[customerId,year]);
+  const existing = await run('SELECT id,tier_key,tier_name,reward_name,reward_quantity,remaining_quantity,redeemed_at,earned_year FROM member_rewards WHERE customer_id=$1 AND earned_year=$2 ORDER BY id DESC LIMIT 1',[customerId,year]);
   if (!existing.rowCount) {
-    const r = await run('INSERT INTO member_rewards(customer_id,earned_year,tier_key,tier_name,reward_name) VALUES($1,$2,$3,$4,$5) RETURNING id,tier_key AS "tierKey",tier_name AS "tierName",reward_name AS "rewardName",redeemed_at AS "redeemedAt"',[customerId,year,tier.key,tier.name,tier.reward]);
+    const r = await run('INSERT INTO member_rewards(customer_id,earned_year,tier_key,tier_name,reward_name,reward_quantity,remaining_quantity) VALUES($1,$2,$3,$4,$5,$6,$6) RETURNING id,tier_key AS "tierKey",tier_name AS "tierName",reward_name AS "rewardName",reward_quantity AS "rewardQuantity",remaining_quantity AS "remainingQuantity",redeemed_at AS "redeemedAt"',[customerId,year,tier.key,tier.name,tier.reward,memberRewardQuantity(tier.key)]);
     return r.rows[0];
   }
   const current = existing.rows[0];
   const rank = {silver:1,gold:2,platinum:3,diamond:4};
   if ((rank[tier.key]||0) > (rank[current.tier_key]||0)) {
-    const r = await run('UPDATE member_rewards SET tier_key=$1,tier_name=$2,reward_name=$3,redeemed_at=NULL,updated_at=NOW() WHERE id=$4 RETURNING id,tier_key AS "tierKey",tier_name AS "tierName",reward_name AS "rewardName",redeemed_at AS "redeemedAt"',[tier.key,tier.name,tier.reward,current.id]);
+    const r = await run('UPDATE member_rewards SET tier_key=$1,tier_name=$2,reward_name=$3,reward_quantity=$4,remaining_quantity=$4,redeemed_at=NULL,redeemed_by=NULL,updated_at=NOW() WHERE id=$5 RETURNING id,tier_key AS "tierKey",tier_name AS "tierName",reward_name AS "rewardName",reward_quantity AS "rewardQuantity",remaining_quantity AS "remainingQuantity",redeemed_at AS "redeemedAt"',[tier.key,tier.name,tier.reward,memberRewardQuantity(tier.key),current.id]);
     return r.rows[0];
   }
-  return {id:current.id,tierKey:current.tier_key,tierName:current.tier_name,rewardName:current.reward_name,redeemedAt:current.redeemed_at};
+  return {id:current.id,tierKey:current.tier_key,tierName:current.tier_name,rewardName:current.reward_name,rewardQuantity:Number(current.reward_quantity||1),remainingQuantity:Number(current.remaining_quantity||0),redeemedAt:current.redeemed_at};
 }
 function normalizePhone(value) { return String(value || '').replace(/\D/g, '').slice(0, 15); }
 
@@ -249,13 +253,13 @@ app.post('/api/customers/:id/reward/use', auth, async (req,res)=>{
   const customerId = Number(req.params.id);
   if (!Number.isInteger(customerId) || customerId <= 0) return res.status(400).json({message:'Thành viên không hợp lệ'});
   const year = new Date().getFullYear();
-  const r = await q(`UPDATE member_rewards SET redeemed_at=NOW(),redeemed_by=$1,updated_at=NOW() WHERE id=(SELECT id FROM member_rewards WHERE customer_id=$2 AND earned_year=$3 AND redeemed_at IS NULL ORDER BY id DESC LIMIT 1) RETURNING id,tier_key AS "tierKey",tier_name AS "tierName",reward_name AS "rewardName",redeemed_at AS "redeemedAt"`,[req.user.id,customerId,year]);
-  if (!r.rowCount) return res.status(400).json({message:'Coupon chưa có hoặc đã được sử dụng'});
+  const r = await q(`UPDATE member_rewards SET remaining_quantity=0,redeemed_at=NOW(),redeemed_by=$1,updated_at=NOW() WHERE id=(SELECT id FROM member_rewards WHERE customer_id=$2 AND earned_year=$3 AND remaining_quantity>0 AND tier_key IN ('platinum','diamond') ORDER BY id DESC LIMIT 1) RETURNING id,tier_key AS "tierKey",tier_name AS "tierName",reward_name AS "rewardName",reward_quantity AS "rewardQuantity",remaining_quantity AS "remainingQuantity",redeemed_at AS "redeemedAt"`,[req.user.id,customerId,year]);
+  if (!r.rowCount) return res.status(400).json({message:'Coupon hiện không thể sử dụng tại đây'});
   res.json({reward:r.rows[0]});
 });
 
 app.post('/api/orders',auth,async(req,res)=>{
-  const {items,paymentMethod,customerId=null,redeemPoints=false}=req.body;
+  const {items,paymentMethod,customerId=null,redeemPoints=false,memberRewardId=null,memberRewardQuantity=0}=req.body;
   if(!Array.isArray(items)||!items.length) return res.status(400).json({message:'Giỏ hàng trống'});
   if(!['cash','transfer'].includes(paymentMethod)) return res.status(400).json({message:'Phương thức thanh toán không hợp lệ'});
   const client=await pool.connect();
@@ -303,20 +307,47 @@ app.post('/api/orders',auth,async(req,res)=>{
       }
     }
 
-    const total=Math.max(0,afterAutomatic-pointsDiscount);
+    let memberCouponQty = 0;
+    let memberCouponDiscount = 0;
+    let memberReward = null;
+    const requestedCouponQty = Math.max(0, Number(memberRewardQuantity)||0);
+    if (requestedCouponQty > 0) {
+      if (!customer) throw new Error('Vui lòng chọn khách hàng để sử dụng coupon');
+      const rr = await client.query('SELECT id,customer_id,tier_key,tier_name,reward_name,reward_quantity,remaining_quantity FROM member_rewards WHERE id=$1 AND customer_id=$2 AND earned_year=$3 FOR UPDATE',[Number(memberRewardId),customer.id,new Date().getFullYear()]);
+      if (!rr.rowCount) throw new Error('Coupon không hợp lệ');
+      memberReward = rr.rows[0];
+      if (!memberRewardIsDrink(memberReward.tier_key)) throw new Error('Coupon này là quà nhận trực tiếp, không dùng để trừ tiền đồ uống');
+      const eligibleDrinkQty = normalized.reduce((sum,x)=>sum + (String(x.m.category||'').trim() === 'Bánh ngọt' ? 0 : x.qty),0);
+      memberCouponQty = Math.min(requestedCouponQty, Number(memberReward.remaining_quantity||0), eligibleDrinkQty);
+      if (memberCouponQty <= 0) throw new Error('Hóa đơn chưa có đồ uống để sử dụng coupon');
+      let left = memberCouponQty;
+      // Coupon miễn phí ly nước: ưu tiên trừ các ly có giá thấp trước; topping đi cùng ly cũng được miễn.
+      const drinkLines = [...normalized].filter(x=>String(x.m.category||'').trim() !== 'Bánh ngọt').sort((a,b)=>Number(a.line/a.qty)-Number(b.line/b.qty));
+      for (const x of drinkLines) {
+        if (left <= 0) break;
+        const take = Math.min(left, x.qty);
+        const unitLine = Math.round(Number(x.line)/Math.max(1,x.qty));
+        memberCouponDiscount += unitLine * take;
+        left -= take;
+      }
+      const newRemaining = Number(memberReward.remaining_quantity||0) - memberCouponQty;
+      await client.query(`UPDATE member_rewards SET remaining_quantity=$1,redeemed_at=CASE WHEN $1=0 THEN NOW() ELSE NULL END,redeemed_by=CASE WHEN $1=0 THEN $2 ELSE redeemed_by END,updated_at=NOW() WHERE id=$3`,[newRemaining,req.user.id,memberReward.id]);
+    }
+
+    const total=Math.max(0,afterAutomatic-pointsDiscount-memberCouponDiscount);
     if(customer && !redeemPoints){
       pointsEarned=Math.floor(total/POINT_EARN_VALUE);
     }
 
     // Tiền mặt được hoàn tất ngay. Chuyển khoản phải chờ payOS xác nhận webhook.
-    const initialStatus = paymentMethod === 'transfer' ? 'pending' : 'paid';
-    const order=await client.query(`INSERT INTO orders(user_id,shift_id,customer_id,payment_method,subtotal,discount,automatic_discount,points_discount,points_used,points_earned,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[req.user.id,shiftId,customer?.id || null,paymentMethod,subtotal,automaticDiscount+pointsDiscount,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,total,initialStatus]);
+    const initialStatus = (paymentMethod === 'transfer' && total > 0) ? 'pending' : 'paid';
+    const order=await client.query(`INSERT INTO orders(user_id,shift_id,customer_id,payment_method,subtotal,discount,automatic_discount,points_discount,points_used,points_earned,member_reward_id,member_reward_quantity,member_reward_discount,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[req.user.id,shiftId,customer?.id || null,paymentMethod,subtotal,automaticDiscount+pointsDiscount+memberCouponDiscount,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,memberReward?.id || null,memberCouponQty,memberCouponDiscount,total,initialStatus]);
     for(const x of normalized){
       const oi=await client.query(`INSERT INTO order_items(order_id,menu_item_id,item_name,unit_price,quantity,line_total,sugar_percent,ice_percent) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[order.rows[0].id,x.m.id,x.m.name,x.m.price,x.qty,x.line,x.sugarPercent,x.icePercent]);
       for(const t of x.tops) await client.query(`INSERT INTO order_item_toppings(order_item_id,topping_id,topping_name,topping_price,quantity) VALUES($1,$2,$3,$4,$5)`,[oi.rows[0].id,t.id,t.name,t.price,t.quantity]);
     }
 
-    if(customer && paymentMethod === 'cash'){
+    if(customer && (paymentMethod === 'cash' || (paymentMethod === 'transfer' && total === 0))){
       const newPoints = Math.max(0, Number(customer.points||0) - pointsUsed + pointsEarned);
       await client.query('UPDATE customers SET points=$1,updated_at=NOW() WHERE id=$2',[newPoints,customer.id]);
       customer.points=newPoints;
@@ -344,7 +375,7 @@ app.post('/api/orders',auth,async(req,res)=>{
         });
         return res.json({
           orderId: order.rows[0].id,
-          total,subtotal,discount:automaticDiscount+pointsDiscount,discountPercent,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,status:initialStatus,
+          total,subtotal,discount:automaticDiscount+pointsDiscount+memberCouponDiscount,discountPercent,automaticDiscount,pointsDiscount,memberCouponDiscount,memberCouponQty,pointsUsed,pointsEarned,status:initialStatus,
           customer:customer?{id:customer.id,fullName:customer.fullName,birthDate:customer.birthDate,points:customer.points}:null,
           checkoutUrl: paymentLink.checkoutUrl || '',
           qrCode: paymentLink.qrCode || '',
@@ -354,11 +385,14 @@ app.post('/api/orders',auth,async(req,res)=>{
       } catch (payError) {
         console.error('payOS create payment error:', payError);
         await q(`UPDATE orders SET status='cancelled' WHERE id=$1 AND status='pending'`, [order.rows[0].id]);
+        if (Number(order.rows[0].member_reward_quantity||0) > 0 && order.rows[0].member_reward_id) {
+          await q(`UPDATE member_rewards SET remaining_quantity=remaining_quantity+$1,redeemed_at=NULL,updated_at=NOW() WHERE id=$2`, [Number(order.rows[0].member_reward_quantity||0), order.rows[0].member_reward_id]);
+        }
         return res.status(502).json({message:payError?.message||'Không tạo được thanh toán payOS'});
       }
     }
 
-    res.json({orderId:order.rows[0].id,total,subtotal,discount:automaticDiscount+pointsDiscount,discountPercent,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,status:initialStatus,customer:customer?{id:customer.id,fullName:customer.fullName,points:customer.points}:null});
+    res.json({orderId:order.rows[0].id,total,subtotal,discount:automaticDiscount+pointsDiscount+memberCouponDiscount,discountPercent,automaticDiscount,pointsDiscount,memberCouponDiscount,memberCouponQty,pointsUsed,pointsEarned,status:initialStatus,customer:customer?{id:customer.id,fullName:customer.fullName,points:customer.points}:null});
   }catch(e){await client.query('ROLLBACK');res.status(400).json({message:e.message||'Không tạo được đơn'});}finally{client.release();}
 });
 
@@ -633,7 +667,10 @@ app.post('/api/payos/cancel-payment/:orderId', auth, async (req,res)=>{
         const payos=makePayOS(payosConfig);
         if(!payos) throw new Error('payOS chưa được cấu hình');
         await payos.paymentRequests.cancel(orderId, 'Khach huy');
-        await q(`UPDATE orders SET status='cancelled' WHERE id=$1 AND status='cancelling'`,[orderId]);
+        const cancelled = await q(`UPDATE orders SET status='cancelled' WHERE id=$1 AND status='cancelling' RETURNING member_reward_id,member_reward_quantity`,[orderId]);
+        if (cancelled.rowCount && Number(cancelled.rows[0].member_reward_quantity||0) > 0 && cancelled.rows[0].member_reward_id) {
+          await q(`UPDATE member_rewards SET remaining_quantity=remaining_quantity+$1,redeemed_at=NULL,redeemed_by=NULL,updated_at=NOW() WHERE id=$2`, [Number(cancelled.rows[0].member_reward_quantity||0), cancelled.rows[0].member_reward_id]);
+        }
       }catch(cancelError){
         console.error('payOS payment link cancel error:', cancelError);
         // Nếu chưa có webhook thanh toán thì cho đơn quay lại pending để không làm mất QR.
