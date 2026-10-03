@@ -778,7 +778,7 @@ async function renderSettings() {
             <div class="settings-accordion-body ${state.settingsOpen.categorySettings ? '' : 'hidden'}" id="categorySettings">
               <div class="settings-section-toolbar">
                 <span class="muted">Danh sách danh mục</span>
-                <button class="btn" onclick="categoryForm()">+ Thêm danh mục</button>
+                <button class="btn primary" onclick="categoryForm()">+ Thêm danh mục</button>
               </div>
               <div class="category-actions">
                 <div class="category-chips">
@@ -841,7 +841,7 @@ async function renderSettings() {
             <div class="settings-accordion-body ${state.settingsOpen.toppingSettings ? '' : 'hidden'}" id="toppingSettings">
               <div class="settings-section-toolbar">
                 <span class="muted">Danh sách topping</span>
-                <button class="btn" onclick="toppingForm()">+ Thêm topping</button>
+                <button class="btn primary" onclick="toppingForm()">+ Thêm topping</button>
               </div>
               <div class="settings-topping-list">
                 ${state.toppings.map(t => `
