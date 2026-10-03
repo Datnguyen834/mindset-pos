@@ -14,7 +14,7 @@ let state = {
   paymentMethod: 'cash',
   userList: null,
   settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false, discountSettings: false },
-  checkoutCustomer: { customer: null, redeem: false }, customerPickerMode: 'checkout'
+  checkoutCustomer: { customer: null, redeem: false }, pendingCustomerSelection: null, customerPickerMode: 'checkout'
 };
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
@@ -915,7 +915,7 @@ function drawCart() {
 
 function changeQty(i, d) { state.cart[i].quantity = Math.max(1, state.cart[i].quantity + d); drawCart(); }
 function removeCart(i) { state.cart.splice(i, 1); drawCart(); }
-function clearCart() { state.cart = []; state.checkoutCustomer = { customer: null, redeem: false }; drawCart(); }
+function clearCart() { state.cart = []; state.checkoutCustomer = { customer: null, redeem: false }; state.pendingCustomerSelection = null; drawCart(); }
 
 function editCartItem(i) {
   const x = state.cart[i];
@@ -1000,11 +1000,10 @@ async function searchCustomerForCheckout() {
   try {
     const d = await api(`/api/customers/search?phone=${encodeURIComponent(phone)}`);
     if (d.customer) {
-      // Tìm thấy là ghi nhận khách ngay cho đơn, không bắt nhân viên chọn lại.
-      state.checkoutCustomer = { customer: d.customer, redeem: false };
-      closeModal();
-      drawCart();
-      toast(`Đã chọn khách hàng ${d.customer.fullName}`);
+      // Chỉ hiển thị thông tin sau khi tìm; chưa ghi nhận vào đơn.
+      // Khách chỉ được ghi nhận khi nhân viên đóng modal bằng X hoặc click ra ngoài.
+      state.pendingCustomerSelection = d.customer;
+      renderCustomerFoundModal(d.customer, true);
     } else {
       renderCustomerNotFoundModal(phone);
     }
@@ -1032,12 +1031,14 @@ function openCustomerLoyaltyModal(mode = 'cart') {
   </div>`);
 }
 
-function renderCustomerFoundModal() {
-  const c = state.checkoutCustomer.customer;
+function renderCustomerFoundModal(customer = null, isSearchPreview = false) {
+  const c = customer || state.pendingCustomerSelection || state.checkoutCustomer?.customer;
+  if (!c) return;
   const baseTotal = cartDiscountInfo().total;
   const possiblePoints = Math.min(Number(c.points || 0), Math.floor(baseTotal / CUSTOMER_POINT_DISCOUNT_VALUE));
-  const alreadyRedeemed = !!state.checkoutCustomer.redeem;
-  const redeemButtonClass = possiblePoints > 0 && !alreadyRedeemed ? 'customer-point-action active' : 'customer-point-action disabled';
+  const alreadyRedeemed = !!state.checkoutCustomer?.redeem;
+  const canRedeem = possiblePoints > 0 && !alreadyRedeemed && (state.checkoutCustomer?.customer ? true : (isSearchPreview && state.cart.length > 0));
+  const redeemButtonClass = canRedeem ? 'customer-point-action active' : 'customer-point-action disabled';
   const redeemLabel = alreadyRedeemed ? 'Đã dùng điểm' : 'Discount point';
 
   openModal(`<div class="customer-loyalty-modal">
@@ -1049,13 +1050,18 @@ function renderCustomerFoundModal() {
       <div><span>Số điểm hiện có</span><strong>${Number(c.points || 0)} điểm</strong></div>
       <div><span>Tổng chi tiêu</span><strong>${money(Number(c.totalSpend || 0))}</strong></div>
     </div>
-    <button type="button" class="${redeemButtonClass}" ${possiblePoints > 0 && !alreadyRedeemed ? `onclick="chooseCustomerOption(true)"` : 'disabled'}>
+    <button type="button" class="${redeemButtonClass}" ${canRedeem ? `onclick="chooseCustomerOption(true)"` : 'disabled'}>
       <span>${redeemLabel}</span>
     </button>
   </div>`);
 }
 
 function chooseCustomerOption(redeem) {
+  // Nếu đang xem kết quả tìm kiếm, chỉ khi bấm Discount point mới ghi nhận khách vào đơn.
+  if (state.pendingCustomerSelection) {
+    state.checkoutCustomer = { customer: state.pendingCustomerSelection, redeem: false };
+    state.pendingCustomerSelection = null;
+  }
   state.checkoutCustomer.redeem = !!redeem;
   if (state.customerPickerMode === 'cart') {
     closeModal();
@@ -1105,6 +1111,12 @@ async function createCustomerAndContinue(phone) {
 }
 
 function closeCustomerPicker() {
+  if (state.pendingCustomerSelection) {
+    state.checkoutCustomer = { customer: state.pendingCustomerSelection, redeem: false };
+    state.pendingCustomerSelection = null;
+    drawCart();
+    toast(`Đã chọn khách hàng ${state.checkoutCustomer.customer.fullName}`);
+  }
   closeModal();
 }
 
@@ -1734,8 +1746,21 @@ function openModal(html) {
   };
   $('#modal').classList.remove('hidden');
 }
-function closeModal() { $('#modal').classList.add('hidden'); window.__productDraft = null; window.__editIndex = null; }
+function closeModal() {
+  $('#modal').classList.add('hidden');
+  window.__productDraft = null;
+  window.__editIndex = null;
+}
 window.closeModal = closeModal;
+
+// Với modal tìm khách: bấm ra vùng nền ngoài modal cũng ghi nhận khách đang xem.
+document.addEventListener('click', (e) => {
+  const modal = $('#modal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  if (e.target === modal && state.pendingCustomerSelection) {
+    closeCustomerPicker();
+  }
+});
 
 async function enterAppFullscreen() {
   if (document.fullscreenElement) return true;
