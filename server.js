@@ -71,6 +71,7 @@ async function initDb() {
     await q(`INSERT INTO toppings(name,price) VALUES ('Trân châu',5000),('Thạch',5000),('Kem cheese',8000),('Shot espresso',10000),('Sữa tươi',5000)`);
   }
   await q(`INSERT INTO settings(key,value) VALUES('payment_qr','') ON CONFLICT(key) DO NOTHING`);
+  await q(`INSERT INTO settings(key,value) VALUES('discount_rules','[]') ON CONFLICT(key) DO NOTHING`);
 }
 
 function sign(user) { return jwt.sign({ id:user.id, username:user.username, fullName:user.full_name, role:user.role }, JWT_SECRET, { expiresIn:'12h' }); }
@@ -102,9 +103,10 @@ app.get('/api/menu',auth,async(req,res)=>{ const r=await q('SELECT id,name,categ
 app.get('/api/categories',auth,async(req,res)=>{ const r=await q('SELECT id,name FROM categories WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/toppings',auth,async(req,res)=>{ const r=await q('SELECT id,name,price FROM toppings WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/settings/qr',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='payment_qr'"); res.json({image:r.rows[0]?.value||''}); });
+app.get('/api/settings/discount-rules',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{ rules=JSON.parse(r.rows[0]?.value||'[]'); }catch{} res.json({rules:Array.isArray(rules)?rules:[]}); });
 
 app.post('/api/orders',auth,async(req,res)=>{
-  const {items,paymentMethod,discount=0}=req.body;
+  const {items,paymentMethod}=req.body;
   if(!Array.isArray(items)||!items.length) return res.status(400).json({message:'Giỏ hàng trống'});
   if(!['cash','transfer'].includes(paymentMethod)) return res.status(400).json({message:'Phương thức thanh toán không hợp lệ'});
   const client=await pool.connect();
@@ -124,7 +126,14 @@ app.post('/api/orders',auth,async(req,res)=>{
       }
       const line=(Number(m.price)+topTotal)*qty; subtotal+=line; normalized.push({m,qty,tops,line,sugarPercent:Math.min(100,Math.max(0,money(item.sugarPercent ?? 100))),icePercent:Math.min(100,Math.max(0,money(item.icePercent ?? 100)))});
     }
-    const disc=Math.min(subtotal,Math.max(0,money(discount)));
+    const setting=await client.query("SELECT value FROM settings WHERE key='discount_rules'");
+    let rules=[];
+    try{ rules=JSON.parse(setting.rows[0]?.value||'[]'); }catch{}
+    rules=Array.isArray(rules)?rules.map(r=>({threshold:money(r.threshold),percent:Math.min(100,Math.max(0,money(r.percent)))})).filter(r=>r.threshold>0&&r.percent>0):[];
+    rules.sort((a,b)=>b.threshold-a.threshold);
+    const matchedRule=rules.find(r=>subtotal>=r.threshold);
+    const discountPercent=matchedRule?.percent||0;
+    const disc=Math.min(subtotal,Math.round(subtotal*discountPercent/100));
     const total=subtotal-disc;
     const order=await client.query(`INSERT INTO orders(user_id,shift_id,payment_method,subtotal,discount,total,status) VALUES($1,$2,$3,$4,$5,$6,'paid') RETURNING *`,[req.user.id,shiftId,paymentMethod,subtotal,disc,total]);
     for(const x of normalized){
@@ -132,7 +141,7 @@ app.post('/api/orders',auth,async(req,res)=>{
       for(const t of x.tops) await client.query(`INSERT INTO order_item_toppings(order_item_id,topping_id,topping_name,topping_price,quantity) VALUES($1,$2,$3,$4,$5)`,[oi.rows[0].id,t.id,t.name,t.price,t.quantity]);
     }
     await client.query('COMMIT');
-    res.json({orderId:order.rows[0].id,total,subtotal,discount:disc});
+    res.json({orderId:order.rows[0].id,total,subtotal,discount:disc,discountPercent});
   }catch(e){await client.query('ROLLBACK');res.status(400).json({message:e.message||'Không tạo được đơn'});}finally{client.release();}
 });
 
@@ -314,6 +323,9 @@ app.put('/api/admin/toppings/:id',auth,adminOnly,async(req,res)=>{const {name,pr
 app.delete('/api/admin/toppings/:id',auth,adminOnly,async(req,res)=>{await q('UPDATE toppings SET active=false WHERE id=$1',[req.params.id]);res.json({ok:true});});
 
 app.post('/api/admin/qr',auth,adminOnly,upload.single('qr'),async(req,res)=>{if(!req.file)return res.status(400).json({message:'Chưa chọn file'});const data=`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;await q("UPDATE settings SET value=$1 WHERE key='payment_qr'",[data]);res.json({image:data});});
+app.get('/api/admin/discount-rules',auth,adminOnly,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{rules=JSON.parse(r.rows[0]?.value||'[]')}catch{} res.json({rules:Array.isArray(rules)?rules:[]}); });
+app.post('/api/admin/discount-rules',auth,adminOnly,async(req,res)=>{ const threshold=money(req.body.threshold), percent=Math.min(100,Math.max(0,money(req.body.percent))); if(threshold<=0)return res.status(400).json({message:'Giá trị hóa đơn phải lớn hơn 0'}); if(percent<=0)return res.status(400).json({message:'Phần trăm giảm phải lớn hơn 0'}); const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{rules=JSON.parse(r.rows[0]?.value||'[]')}catch{}; rules=Array.isArray(rules)?rules:[]; rules=rules.filter(x=>money(x.threshold)!==threshold); rules.push({threshold,percent}); rules.sort((a,b)=>a.threshold-b.threshold); await q("INSERT INTO settings(key,value) VALUES('discount_rules',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(rules)]); res.json({rules}); });
+app.delete('/api/admin/discount-rules/:threshold',auth,adminOnly,async(req,res)=>{ const threshold=money(req.params.threshold); const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{rules=JSON.parse(r.rows[0]?.value||'[]')}catch{}; rules=(Array.isArray(rules)?rules:[]).filter(x=>money(x.threshold)!==threshold); await q("INSERT INTO settings(key,value) VALUES('discount_rules',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(rules)]); res.json({rules}); });
 
 app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
   const {from,to}=req.query;

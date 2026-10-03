@@ -9,10 +9,11 @@ let state = {
   cart: [],
   category: 'Tất cả',
   qr: '',
+  discountRules: [],
   page: 'pos',
   paymentMethod: 'cash',
   userList: null,
-  settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false }
+  settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false, discountSettings: false }
 };
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
@@ -147,6 +148,7 @@ async function loadBase() {
   state.categories = categories;
   state.toppings = toppings;
   state.qr = qr.image || '';
+   state.discountRules = Array.isArray(discountRules.rules) ? discountRules.rules : [];
 }
 
 function renderPage() {
@@ -177,6 +179,7 @@ function renderPOS() {
           <div id="cartItems" class="cart-items"></div>
           <div class="cart-total">
             <div class="total-line"><span>Tạm tính</span><b id="subtotal">0đ</b></div>
+            <div class="total-line discount-line" id="discountRow"><span class="discount-label">Discount</span><b id="cartDiscount">-0đ</b></div>
             <div class="payment-choice">
               <div class="payment-label">Phương thức thanh toán</div>
               <div class="payment-options">
@@ -369,6 +372,14 @@ function cartSubtotal() {
   return state.cart.reduce((s, x) => s + (x.price + x.toppings.reduce((a, t) => a + t.price * t.quantity, 0)) * x.quantity, 0);
 }
 
+function cartDiscountInfo(subtotal = cartSubtotal()) {
+  const rules = Array.isArray(state.discountRules) ? [...state.discountRules].sort((a,b)=>Number(b.threshold)-Number(a.threshold)) : [];
+  const rule = rules.find(r => subtotal >= Number(r.threshold));
+  const percent = rule ? Math.min(100, Math.max(0, Number(rule.percent)||0)) : 0;
+  const amount = Math.min(subtotal, Math.round(subtotal * percent / 100));
+  return { percent, amount, total: subtotal - amount };
+}
+
 function toppingText(x) {
   const tops = x.toppings.length ? x.toppings.map(t => `${esc(t.name)}${t.quantity > 1 ? ` x${t.quantity}` : ''}`).join(', ') : 'Không topping';
   return `${tops} · Đường ${x.sugarPercent}% · Đá ${x.icePercent}%`;
@@ -402,8 +413,14 @@ function drawCart() {
       </div>`;
     }).join('');
   }
-  $('#subtotal').textContent = money(cartSubtotal());
-  $('#cartTotal').textContent = money(cartSubtotal());
+  const subtotal = cartSubtotal();
+  const discountInfo = cartDiscountInfo(subtotal);
+  const discountEl = $('#cartDiscount');
+  const discountRow = $('#discountRow');
+  $('#subtotal').textContent = money(subtotal);
+  if (discountEl) discountEl.textContent = `-${money(discountInfo.amount)}`;
+  if (discountRow) discountRow.querySelector('.discount-label').textContent = discountInfo.percent > 0 ? `Discount - ${discountInfo.percent}%` : 'Discount';
+  $('#cartTotal').textContent = money(discountInfo.total);
   $('#cartCount').textContent = `${state.cart.reduce((s, x) => s + x.quantity, 0)} món`;
 }
 
@@ -476,7 +493,7 @@ async function checkout() {
     if (!state.qr) return toast('Admin chưa upload QR chuyển khoản', true);
     openModal(`<h3>Quét QR chuyển khoản</h3><p class="muted">Khách quét mã, kiểm tra giao dịch rồi bấm xác nhận.</p><img class="checkout-qr" src="${state.qr}" alt="QR chuyển khoản"><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('transfer')">Thanh toán thành công</button></div>`);
   } else {
-    openModal(`<div class="success"><div class="check">💵</div><h3>Xác nhận thanh toán tiền mặt</h3><p>Tổng tiền: <b class="modal-total">${money(cartSubtotal())}</b></p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('cash')">Xác nhận thanh toán</button></div>`);
+    openModal(`<div class="success"><div class="check">💵</div><h3>Xác nhận thanh toán tiền mặt</h3><p>Tổng tiền sau discount: <b class="modal-total">${money(cartDiscountInfo().total)}</b></p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('cash')">Xác nhận thanh toán</button></div>`);
   }
 }
 
@@ -496,7 +513,7 @@ async function completePayment(method) {
     state.cart = [];
     closeModal();
     renderPOS();
-    openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.orderId}</b> · Tổng tiền <b class="modal-total">${money(d.total)}</b></p><p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.orderId})">In bill</button></div>`);
+    openModal(`<div class="success payment-success"><div class="check">✓</div><h3>Thanh toán thành công</h3><p>Đơn <b>#${d.orderId}</b> · Discount <b>${d.discountPercent || 0}%</b> · Tổng tiền <b class="modal-total">${money(d.total)}</b></p><p class="muted">Bạn có muốn in hóa đơn không?</p></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Bỏ qua</button><button class="btn primary" onclick="printOrder(${d.orderId})">In bill</button></div>`);
     toast(`Đã thanh toán #${d.orderId} — ${money(d.total)}`);
   } catch (e) { toast(e.message, true); }
 }
@@ -803,6 +820,29 @@ async function renderSettings() {
             </div>
           </div>
 
+          <div class="settings-accordion">
+            <button type="button" class="settings-accordion-head" onclick="toggleSettingsSection('discountSettings')">
+              <span>
+                <strong>Discount</strong>
+                <small>${state.discountRules.length} mức giảm · Tự động áp dụng theo giá trị hóa đơn</small>
+              </span>
+              <span class="settings-chevron ${state.settingsOpen.discountSettings ? 'open' : ''}" id="discountSettingsChevron">⌄</span>
+            </button>
+            <div class="settings-accordion-body ${state.settingsOpen.discountSettings ? '' : 'hidden'}" id="discountSettings">
+              <div class="settings-section-toolbar">
+                <span class="muted">Ví dụ: Hóa đơn từ 100.000đ → giảm 10%</span>
+                <button class="btn primary" onclick="discountForm()">+ Thêm discount</button>
+              </div>
+              <div class="settings-topping-list">
+                ${state.discountRules.length ? [...state.discountRules].sort((a,b)=>a.threshold-b.threshold).map(r => `
+                  <div class="topping settings-topping-row">
+                    <span><strong>Giảm ${Number(r.percent)}%</strong> · Hóa đơn từ ${money(r.threshold)}</span>
+                    <button class="btn small danger" onclick="deleteDiscountRule(${Number(r.threshold)})">Xóa</button>
+                  </div>`).join('') : '<div class="empty">Chưa có mức discount</div>'}
+              </div>
+            </div>
+          </div>
+
         </section>
 
         <section class="section-card settings-qr-card">
@@ -831,6 +871,34 @@ function toggleSettingsSection(sectionId) {
   const chevron = $('#' + sectionId + 'Chevron');
   if (chevron) chevron.classList.toggle('open', willOpen);
 }
+
+function discountForm() {
+  openModal(`<h3>Thêm discount</h3><form id="discountForm"><div class="form-grid"><label>Hóa đơn từ<input id="discountThreshold" type="number" min="1" step="1000" placeholder="100000" required></label><label>Giảm<input id="discountPercent" type="number" min="1" max="100" step="1" placeholder="10" required></label></div><p class="muted">Nhân viên không cần chọn % discount. Hệ thống tự áp dụng mức phù hợp khi thanh toán.</p><div class="modal-actions"><button type="button" class="btn" onclick="closeModal()">Hủy</button><button class="btn primary">Lưu</button></div></form>`);
+  $('#discountForm').onsubmit = async e => {
+    e.preventDefault();
+    const threshold=Number($('#discountThreshold').value), percent=Number($('#discountPercent').value);
+    try {
+      await api('/api/admin/discount-rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({threshold,percent})});
+      await loadBase();
+      state.settingsOpen.discountSettings=true;
+      closeModal();
+      renderSettings();
+      toast('Đã lưu mức discount');
+    } catch(e){ toast(e.message,true); }
+  };
+}
+
+async function deleteDiscountRule(threshold) {
+  confirmDelete({title:'Xóa mức discount?',message:'Bạn có chắc muốn xóa mức giảm cho hóa đơn từ',item:money(threshold)+'?',onConfirm:async()=>{
+    await api('/api/admin/discount-rules/'+threshold,{method:'DELETE'});
+    await loadBase();
+    state.settingsOpen.discountSettings=true;
+    renderSettings();
+    toast('Đã xóa mức discount');
+  }});
+}
+window.discountForm=discountForm;
+window.deleteDiscountRule=deleteDiscountRule;
 
 function categoryForm(c = {}, returnToMenu = false) {
   openModal(`<h3>${c.id ? 'Sửa danh mục' : 'Thêm danh mục'}</h3><form id="categoryForm"><label>Tên danh mục<input id="catName" value="${esc(c.name || '')}" maxlength="40" placeholder="Ví dụ: Sinh tố" required></label><div class="modal-actions"><button type="button" class="btn" onclick="closeModal()">Hủy</button><button class="btn primary">Lưu</button></div></form>`);
