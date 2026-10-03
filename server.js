@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import pg from 'pg';
 import fs from 'fs';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PayOS } from '@payos/node';
@@ -18,17 +19,44 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024 } });
 
-const payosConfigured = Boolean(
-  process.env.PAYOS_CLIENT_ID &&
-  process.env.PAYOS_API_KEY &&
-  process.env.PAYOS_CHECKSUM_KEY
-);
-const payos = payosConfigured ? new PayOS({
-  clientId: process.env.PAYOS_CLIENT_ID,
-  apiKey: process.env.PAYOS_API_KEY,
-  checksumKey: process.env.PAYOS_CHECKSUM_KEY,
-}) : null;
 const publicBaseUrl = () => String(process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+const payosSecretKey = crypto.createHash('sha256').update(String(JWT_SECRET)).digest();
+
+function encryptPayOSConfig(config) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', payosSecretKey, iv);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(config), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return JSON.stringify({v:1,iv:iv.toString('base64'),tag:tag.toString('base64'),data:encrypted.toString('base64')});
+}
+function decryptPayOSConfig(value) {
+  try {
+    const raw = JSON.parse(String(value || ''));
+    if (!raw?.iv || !raw?.tag || !raw?.data) return null;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', payosSecretKey, Buffer.from(raw.iv,'base64'));
+    decipher.setAuthTag(Buffer.from(raw.tag,'base64'));
+    const plain = Buffer.concat([decipher.update(Buffer.from(raw.data,'base64')), decipher.final()]).toString('utf8');
+    const cfg = JSON.parse(plain);
+    if (!cfg.clientId || !cfg.apiKey || !cfg.checksumKey) return null;
+    return cfg;
+  } catch { return null; }
+}
+async function getPayOSConfig() {
+  const r = await q("SELECT value FROM settings WHERE key='payos_credentials'");
+  const dbConfig = decryptPayOSConfig(r.rows[0]?.value);
+  if (dbConfig) return {...dbConfig, source:'database'};
+  const envConfig = {
+    clientId: String(process.env.PAYOS_CLIENT_ID || '').trim(),
+    apiKey: String(process.env.PAYOS_API_KEY || '').trim(),
+    checksumKey: String(process.env.PAYOS_CHECKSUM_KEY || '').trim(),
+    source: 'environment'
+  };
+  return envConfig.clientId && envConfig.apiKey && envConfig.checksumKey ? envConfig : null;
+}
+function makePayOS(config) {
+  if (!config?.clientId || !config?.apiKey || !config?.checksumKey) return null;
+  return new PayOS({clientId:config.clientId,apiKey:config.apiKey,checksumKey:config.checksumKey});
+}
 
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
@@ -44,6 +72,10 @@ async function initDb() {
     const a = await bcrypt.hash('admin@123', 10);
     const s = await bcrypt.hash('123456@', 10);
     await q(`INSERT INTO users(username,password_hash,full_name,role) VALUES ($1,$2,$3,'admin'),($4,$5,$6,'staff')`, ['admin',a,'Quản trị viên','nhanvien',s,'Đạt']);
+  }
+  const existingPayOS = await q("SELECT 1 FROM settings WHERE key='payos_credentials' LIMIT 1");
+  if (!existingPayOS.rowCount && process.env.PAYOS_CLIENT_ID && process.env.PAYOS_API_KEY && process.env.PAYOS_CHECKSUM_KEY) {
+    await q("INSERT INTO settings(key,value) VALUES('payos_credentials',$1)", [encryptPayOSConfig({clientId:String(process.env.PAYOS_CLIENT_ID).trim(),apiKey:String(process.env.PAYOS_API_KEY).trim(),checksumKey:String(process.env.PAYOS_CHECKSUM_KEY).trim()})]);
   }
   // Quyền tài khoản: admin = admin tổng (tài khoản hệ thống), manager = quản lý, staff = nhân viên.
   // Migration cho database cũ: đổi constraint role và chuyển các tài khoản admin không phải 'admin' thành manager.
@@ -110,6 +142,7 @@ function auth(req,res,next) {
   } catch { return res.status(401).json({message:'Phiên đăng nhập đã hết hạn'}); }
 }
 function adminOnly(req,res,next){ if(!['admin','manager'].includes(req.user.role)) return res.status(403).json({message:'Chỉ quản lý hoặc admin tổng được phép'}); next(); }
+function payOSAdminOnly(req,res,next){ if(req.user.role!=='admin') return res.status(403).json({message:'Chỉ Admin tổng được phép thay đổi kênh thanh toán'}); next(); }
 function money(n){ return Math.round(Number(n)||0); }
 
 app.get('/api/health', async (_,res)=>{ try { await q('SELECT 1'); res.json({ok:true}); } catch(e){ res.status(500).json({ok:false}); }});
@@ -131,6 +164,7 @@ app.get('/api/menu',auth,async(req,res)=>{ const r=await q('SELECT id,name,categ
 app.get('/api/categories',auth,async(req,res)=>{ const r=await q('SELECT id,name FROM categories WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/toppings',auth,async(req,res)=>{ const r=await q('SELECT id,name,price FROM toppings WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/settings/bank',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='payment_bank'"); let bank={}; try{ bank=JSON.parse(r.rows[0]?.value||'{}'); }catch{} res.json({bank}); });
+app.get('/api/settings/payos',auth,payOSAdminOnly,async(req,res)=>{ const cfg=await getPayOSConfig(); if(!cfg) return res.json({configured:false,source:null,clientId:''}); const mask=(v)=>v ? `••••${String(v).slice(-4)}` : ''; res.json({configured:true,source:cfg.source,clientId:cfg.clientId||'',apiKeyMasked:mask(cfg.apiKey),checksumKeyMasked:mask(cfg.checksumKey)}); });
 app.get('/api/settings/qr',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='payment_qr'"); res.json({image:r.rows[0]?.value||''}); });
 app.get('/api/banks',auth,async(req,res)=>{ try { const r=await fetch('https://api.vietqr.io/v2/banks'); if(!r.ok) throw new Error('VietQR banks unavailable'); const d=await r.json(); res.json({banks:Array.isArray(d.data)?d.data:[]}); } catch(e) { res.status(502).json({message:'Không tải được danh sách ngân hàng VietQR'}); } });
 app.get('/api/settings/discount-rules',auth,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{ rules=JSON.parse(r.rows[0]?.value||'[]'); }catch{} res.json({rules:Array.isArray(rules)?rules:[]}); });
@@ -418,6 +452,24 @@ app.post('/api/admin/toppings',auth,adminOnly,async(req,res)=>{const {name,price
 app.put('/api/admin/toppings/:id',auth,adminOnly,async(req,res)=>{const {name,price,active}=req.body;const r=await q('UPDATE toppings SET name=COALESCE($1,name),price=COALESCE($2,price),active=COALESCE($3,active) WHERE id=$4 RETURNING *',[name,price!==undefined?money(price):null,active!==undefined?active:null,req.params.id]);res.json(r.rows[0]);});
 app.delete('/api/admin/toppings/:id',auth,adminOnly,async(req,res)=>{await q('UPDATE toppings SET active=false WHERE id=$1',[req.params.id]);res.json({ok:true});});
 
+app.put('/api/admin/payos-credentials',auth,payOSAdminOnly,async(req,res)=>{
+  const clientId=String(req.body.clientId||'').trim();
+  const apiKey=String(req.body.apiKey||'').trim();
+  const checksumKey=String(req.body.checksumKey||'').trim();
+  if(!clientId || !apiKey || !checksumKey) return res.status(400).json({message:'Nhập đầy đủ Client ID, API Key và Checksum Key'});
+  try{
+    const candidate={clientId,apiKey,checksumKey};
+    const candidatePayOS=makePayOS(candidate);
+    const webhookUrl=`${publicBaseUrl()}/api/payos/webhook`;
+    const result=await candidatePayOS.webhooks.confirm(webhookUrl);
+    await q("INSERT INTO settings(key,value) VALUES('payos_credentials',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[encryptPayOSConfig(candidate)]);
+    res.json({ok:true,source:'database',clientId,webhookUrl,result});
+  }catch(e){
+    console.error('payOS credential update error:',e);
+    res.status(400).json({message:e?.message||'Không thể kết nối kênh payOS mới. Kiểm tra lại 3 key.'});
+  }
+});
+
 app.put('/api/admin/payment-bank',auth,adminOnly,async(req,res)=>{ const bankId=String(req.body.bankId||'').trim(); const bankName=String(req.body.bankName||'').trim(); const accountNo=String(req.body.accountNo||'').replace(/\D/g,'').slice(0,19); const accountName=String(req.body.accountName||'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim().slice(0,50); const template=['compact2','compact','qr_only','print'].includes(req.body.template)?req.body.template:'compact2'; if(!bankId)return res.status(400).json({message:'Chọn ngân hàng'}); if(accountNo.length<6)return res.status(400).json({message:'Số tài khoản phải có ít nhất 6 số'}); if(accountName.length<5)return res.status(400).json({message:'Tên tài khoản phải có ít nhất 5 ký tự'}); const bank={bankId,bankName,accountNo,accountName,template}; await q("INSERT INTO settings(key,value) VALUES('payment_bank',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(bank)]); res.json({bank}); });
 app.post('/api/admin/qr',auth,adminOnly,upload.single('qr'),async(req,res)=>{return res.status(410).json({message:'QR tĩnh đã được thay bằng VietQR tự động'});});
 app.get('/api/admin/discount-rules',auth,adminOnly,async(req,res)=>{ const r=await q("SELECT value FROM settings WHERE key='discount_rules'"); let rules=[]; try{rules=JSON.parse(r.rows[0]?.value||'[]')}catch{} res.json({rules:Array.isArray(rules)?rules:[]}); });
@@ -426,7 +478,9 @@ app.delete('/api/admin/discount-rules/:threshold',auth,adminOnly,async(req,res)=
 
 // payOS: tạo payment link/QR cho đúng hóa đơn. Order đã được tạo ở trạng thái pending.
 app.post('/api/payos/create-payment', auth, async (req,res)=>{
-  if(!payosConfigured || !payos) return res.status(503).json({message:'payOS chưa được cấu hình trên Render'});
+  const payosConfig=await getPayOSConfig();
+  const payos=makePayOS(payosConfig);
+  if(!payos) return res.status(503).json({message:'payOS chưa được cấu hình. Admin tổng hãy vào Cài đặt → Tài khoản ngân hàng để nhập bộ key mới.'});
   const orderId=Number(req.body.orderId);
   if(!Number.isInteger(orderId) || orderId<=0) return res.status(400).json({message:'Mã đơn không hợp lệ'});
   try{
@@ -471,7 +525,9 @@ app.post('/api/payos/cancel-payment/:orderId', auth, async (req,res)=>{
     if(order.status==='cancelled') return res.json({ok:true,cancelled:true,payOSCancelled:true});
     if(order.status==='paid') return res.status(409).json({message:'Đơn hàng đã thanh toán, không thể hủy'});
     if(order.status!=='pending') return res.status(400).json({message:`Đơn hàng đang ở trạng thái ${order.status}`});
-    if(!payosConfigured || !payos) return res.status(503).json({message:'payOS chưa được cấu hình'});
+    const payosConfig=await getPayOSConfig();
+    const payos=makePayOS(payosConfig);
+    if(!payos) return res.status(503).json({message:'payOS chưa được cấu hình'});
 
     // Hủy payment link trên payOS trước, sau đó mới đánh dấu đơn local là cancelled.
     // payOS cho phép hủy theo orderCode nên không cần lưu paymentLinkId riêng.
@@ -510,7 +566,9 @@ app.get('/api/payos/payment-status/:orderId', auth, async (req,res)=>{
 });
 
 app.post('/api/payos/webhook', async (req,res)=>{
-  if(!payosConfigured || !payos) return res.status(503).send('payOS not configured');
+  const payosConfig=await getPayOSConfig();
+  const payos=makePayOS(payosConfig);
+  if(!payos) return res.status(503).send('payOS not configured');
   try{
     const verified=await payos.webhooks.verify(req.body);
     const data=verified?.data && typeof verified.data==='object' ? verified.data : verified;
@@ -574,8 +632,10 @@ app.post('/api/payos/webhook', async (req,res)=>{
   }
 });
 
-app.post('/api/payos/confirm-webhook', auth, adminOnly, async (req,res)=>{
-  if(!payosConfigured || !payos) return res.status(503).json({message:'payOS chưa được cấu hình trên Render'});
+app.post('/api/payos/confirm-webhook', auth, payOSAdminOnly, async (req,res)=>{
+  const payosConfig=await getPayOSConfig();
+  const payos=makePayOS(payosConfig);
+  if(!payos) return res.status(503).json({message:'payOS chưa được cấu hình'});
   try{
     const webhookUrl=`${publicBaseUrl()}/api/payos/webhook`;
     const result=await payos.webhooks.confirm(webhookUrl);
@@ -599,17 +659,19 @@ app.get('/api/admin/reports/summary',auth,adminOnly,async(req,res)=>{
 app.get(/.*/,(req,res)=>res.sendFile(path.join(__dirname,'public/index.html')));
 
 async function confirmPayOSWebhookOnStartup() {
-  if(!payosConfigured || !payos){
-    console.log('payOS disabled: missing PAYOS_CLIENT_ID/PAYOS_API_KEY/PAYOS_CHECKSUM_KEY');
+  const payosConfig=await getPayOSConfig();
+  const payos=makePayOS(payosConfig);
+  if(!payos){
+    console.log('payOS disabled: no database credentials and no PAYOS_* environment credentials');
     return;
   }
   const webhookUrl=`${publicBaseUrl()}/api/payos/webhook`;
   try{
     const result=await payos.webhooks.confirm(webhookUrl);
-    console.log('payOS webhook ready:', result?.webhookUrl || result?.data?.webhookUrl || webhookUrl);
+    console.log(`payOS webhook ready (${payosConfig.source}):`, result?.webhookUrl || result?.data?.webhookUrl || webhookUrl);
   }catch(e){
     console.error('payOS webhook setup failed:',e?.message||e);
-    console.error('Check PAYOS_* keys and PUBLIC_BASE_URL, then use /api/payos/confirm-webhook if needed.');
+    console.error('Check the active payOS channel keys in Cài đặt → Tài khoản ngân hàng.');
   }
 }
 

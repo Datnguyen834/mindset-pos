@@ -10,6 +10,7 @@ let state = {
   category: 'Tất cả',
   bankAccount: { bankId:'', bankName:'', accountNo:'', accountName:'', template:'compact2' },
   bankList: [],
+  payosConfig: {configured:false,source:null,clientId:'',apiKeyMasked:'',checksumKeyMasked:''},
   discountRules: [],
   page: 'pos',
   paymentMethod: 'cash',
@@ -572,13 +573,15 @@ async function boot({ animate = false } = {}) {
 
 async function loadBase() {
   // Tải song song thay vì chờ từng request xong mới chạy request tiếp theo.
-  const [menu, categories, toppings, bank, discountRules, banks] = await Promise.all([
+  const payosPromise = state.user?.role === 'admin' ? api('/api/settings/payos').catch(() => ({configured:false,source:null,clientId:''})) : Promise.resolve({configured:false,source:null,clientId:''});
+  const [menu, categories, toppings, bank, discountRules, banks, payosConfig] = await Promise.all([
     api('/api/menu'),
     api('/api/categories'),
     api('/api/toppings'),
     api('/api/settings/bank'),
     api('/api/settings/discount-rules'),
-    api('/api/banks').catch(() => ({banks:[]}))
+    api('/api/banks').catch(() => ({banks:[]})),
+    payosPromise
   ]);
 
   state.menu = menu;
@@ -586,6 +589,7 @@ async function loadBase() {
   state.toppings = toppings;
   state.bankAccount = bank.bank || { bankId:'', bankName:'', accountNo:'', accountName:'', template:'compact2' };
   state.bankList = Array.isArray(banks.banks) ? banks.banks : [];
+  state.payosConfig = payosConfig || {configured:false,source:null,clientId:''};
   state.discountRules = Array.isArray(discountRules.rules) ? discountRules.rules : [];
 }
 
@@ -1686,7 +1690,7 @@ async function renderSettings() {
             <span class="settings-chevron ${state.settingsOpen.bankSettings ? 'open' : ''}" id="bankSettingsChevron">⌄</span>
           </button>
           <div class="settings-accordion-body ${state.settingsOpen.bankSettings ? '' : 'hidden'}" id="bankSettings">
-            <p class="muted">Admin hoặc Quản lý cấu hình một lần. Mỗi lần thanh toán, VietQR tự tạo mã theo đúng số tiền thực tế.</p>
+            <p class="muted">Mỗi lần thanh toán, QR được tạo động theo đúng số tiền thực tế. Admin tổng có thể đổi kênh payOS ngay tại đây.</p>
             <form id="bankForm" style="margin-top:14px">
               <div class="form-grid">
                 <label>Ngân hàng<select id="bankId" required><option value="">Chọn ngân hàng</option>${(state.bankList||[]).map(b => `<option value="${esc(String(b.bin||b.id||''))}" data-name="${esc(b.shortName||b.name||'')}" ${String(b.bin||b.id||'')===String(state.bankAccount.bankId||'')?'selected':''}>${esc(b.shortName ? `${b.shortName} · ${b.name}` : b.name || '')}</option>`).join('')}</select></label>
@@ -1694,8 +1698,19 @@ async function renderSettings() {
                 <label>Tên tài khoản<input id="bankAccountName" maxlength="50" value="${esc(state.bankAccount.accountName||'')}" placeholder="NGUYEN VAN A" required></label>
                 <label>Mẫu QR<select id="bankTemplate"><option value="compact2" ${state.bankAccount.template==='compact2'?'selected':''}>compact2 · QR + thông tin</option><option value="compact" ${state.bankAccount.template==='compact'?'selected':''}>compact · QR</option><option value="qr_only" ${state.bankAccount.template==='qr_only'?'selected':''}>qr_only · Chỉ QR</option><option value="print" ${state.bankAccount.template==='print'?'selected':''}>print · Đầy đủ</option></select></label>
               </div>
+              ${state.user?.role === 'admin' ? `
+              <div class="settings-block payos-credentials-block" style="margin-top:16px">
+                <h3>Kênh thanh toán payOS</h3>
+                <p class="settings-block-desc">Nhập bộ key của kênh payOS muốn sử dụng. Key được lưu mã hóa trong cơ sở dữ liệu, không cần sửa biến môi trường trên Render.</p>
+                <div class="form-grid" style="margin-top:10px">
+                  <label>Client ID<input id="payosClientId" value="${esc(state.payosConfig.clientId||'')}" placeholder="Client ID" autocomplete="off"></label>
+                  <label>API Key<input id="payosApiKey" type="password" value="" placeholder="${state.payosConfig.apiKeyMasked ? `Đã lưu ${esc(state.payosConfig.apiKeyMasked)}` : 'API Key'}" autocomplete="new-password"></label>
+                  <label>Checksum Key<input id="payosChecksumKey" type="password" value="" placeholder="${state.payosConfig.checksumKeyMasked ? `Đã lưu ${esc(state.payosConfig.checksumKeyMasked)}` : 'Checksum Key'}" autocomplete="new-password"></label>
+                  <div class="form-hint" style="align-self:end">${state.payosConfig.configured ? `Kênh đang dùng: <b>${esc(state.payosConfig.clientId||'')}</b> · ${state.payosConfig.source === 'database' ? 'được lưu trong hệ thống' : 'đang lấy từ Render'}. Để đổi kênh, nhập key mới.` : 'Chưa có kênh payOS trong hệ thống. Hãy nhập đủ 3 key.'}</div>
+                </div>
+              </div>` : ''}
               <div id="bankQrPreview" style="margin-top:16px;text-align:center"></div>
-              <button class="btn primary" style="margin-top:10px" type="submit">Lưu tài khoản ngân hàng</button>
+              <button class="btn primary" style="margin-top:10px" type="submit">${state.user?.role === 'admin' ? 'Lưu tài khoản & kênh thanh toán' : 'Lưu tài khoản ngân hàng'}</button>
             </form>
           </div>
         </section>
@@ -1861,7 +1876,28 @@ async function saveBankAccount(e) {
   e.preventDefault();
   const bankIdEl=$('#bankId'); const opt=bankIdEl?.selectedOptions?.[0];
   const body={ bankId:bankIdEl?.value||'', bankName:opt?.dataset?.name||opt?.textContent?.split(' · ')[0]||'', accountNo:$('#bankAccountNo')?.value||'', accountName:$('#bankAccountName')?.value||'', template:$('#bankTemplate')?.value||'compact2' };
-  try { const d=await api('/api/admin/payment-bank',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); state.bankAccount=d.bank; state.settingsOpen.bankSettings=true; toast('Đã lưu tài khoản ngân hàng'); renderSettings(); } catch(e){ toast(e.message,true); }
+  try {
+    const d=await api('/api/admin/payment-bank',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    state.bankAccount=d.bank;
+
+    if (state.user?.role === 'admin') {
+      const clientId=$('#payosClientId')?.value.trim() || '';
+      const apiKey=$('#payosApiKey')?.value.trim() || '';
+      const checksumKey=$('#payosChecksumKey')?.value.trim() || '';
+      const hasNewKeys=clientId || apiKey || checksumKey || !state.payosConfig.configured;
+      if (hasNewKeys) {
+        const pc=await api('/api/admin/payos-credentials',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId,apiKey,checksumKey})});
+        state.payosConfig={configured:true,source:'database',clientId:pc.clientId,apiKeyMasked:apiKey ? `••••${apiKey.slice(-4)}` : state.payosConfig.apiKeyMasked,checksumKeyMasked:checksumKey ? `••••${checksumKey.slice(-4)}` : state.payosConfig.checksumKeyMasked};
+        toast('Đã lưu tài khoản ngân hàng và chuyển sang kênh payOS mới');
+      } else {
+        toast('Đã lưu tài khoản ngân hàng');
+      }
+    } else {
+      toast('Đã lưu tài khoản ngân hàng');
+    }
+    state.settingsOpen.bankSettings=true;
+    renderSettings();
+  } catch(e){ toast(e.message,true); }
 }
 
 async function uploadQR(){ toast('QR tĩnh đã được thay bằng VietQR tự động', true); }
