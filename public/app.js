@@ -647,8 +647,129 @@ async function deleteUser(id) {
 async function renderSettings() {
   const menu = await api('/api/menu');
   const categories = state.categories || [];
-  $('#page').innerHTML = `<div class="content"><div class="page-title"><div><h1>Cài đặt</h1><p>Quản lý menu, danh mục, topping và QR chuyển khoản.</p></div></div><div class="report-grid"><section class="section-card"><div class="category-management"><div class="category-management-title"><h3>Danh mục</h3></div><div class="category-actions"><div class="category-chips">${categories.map(c => `<div class="category-chip"><span>${esc(c.name)}</span><button type="button" onclick='categoryForm(${JSON.stringify(c)})' aria-label="Sửa danh mục">Sửa</button><button type="button" class="danger-text" onclick="deleteCategory(${c.id})" aria-label="Xóa danh mục">Xóa</button></div>`).join('')}<button class="btn category-add-btn" onclick="categoryForm()">+ Thêm danh mục</button></div></div></div><div class="settings-section-head menu-section-head"><h3>Menu món</h3><button class="btn primary" onclick="menuForm()">+ Thêm món</button></div><div class="table-card" style="margin-top:15px"><table class="data-table"><thead><tr><th>Món</th><th>Danh mục</th><th>Giá</th><th></th></tr></thead><tbody>${menu.map(m => `<tr><td><img class="avatar" src="${m.image || '/assets/logo.png'}">${esc(m.name)}</td><td>${esc(m.category)}</td><td>${money(m.price)}</td><td><button class="btn small" onclick='menuForm(${JSON.stringify(m)})'>Sửa</button> <button class="btn small danger" onclick="deleteMenu(${m.id})">Xóa</button></td></tr>`).join('')}</tbody></table></div></section><section class="section-card"><h3>QR chuyển khoản</h3><p class="muted">Ảnh này sẽ hiện cho nhân viên khi chọn chuyển khoản.</p>${state.qr ? `<img class="qr-preview" src="${state.qr}">` : '<div class="empty">Chưa có QR</div>'}<form id="qrForm" style="margin-top:14px"><input type="file" id="qrFile" accept="image/*"><button class="btn primary" style="margin-top:10px" type="submit">Upload QR</button></form><hr><div class="settings-section-head"><h3>Topping</h3><button class="btn" onclick="toppingForm()">+ Thêm topping</button></div><div>${state.toppings.map(t => `<div class="topping"><span>${esc(t.name)} · ${money(t.price)}</span><button class="btn small danger" onclick="deleteTop(${t.id})">Xóa</button></div>`).join('')}</div></section></div></div>`;
+
+  $('#page').innerHTML = `
+    <div class="content settings-content">
+      <div class="page-title">
+        <div>
+          <h1>Cài đặt</h1>
+          <p>Quản lý menu, danh mục, topping và QR chuyển khoản.</p>
+        </div>
+      </div>
+
+      <div class="settings-layout">
+        <section class="section-card settings-main-card">
+
+          <div class="settings-block category-block">
+            <div class="settings-block-head">
+              <div>
+                <h3>Danh mục</h3>
+                <p class="settings-block-desc">Thêm, sửa hoặc xóa danh mục món.</p>
+              </div>
+            </div>
+            <div class="category-actions">
+              <div class="category-chips">
+                ${categories.map(c => `
+                  <div class="category-chip">
+                    <span>${esc(c.name)}</span>
+                    <button type="button" onclick='categoryForm(${JSON.stringify(c)})'>Sửa</button>
+                    <button type="button" class="danger-text" onclick="deleteCategory(${c.id})">Xóa</button>
+                  </div>
+                `).join('')}
+                <button class="btn category-add-btn" onclick="categoryForm()">+ Thêm danh mục</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-accordion">
+            <button type="button" class="settings-accordion-head" onclick="toggleSettingsSection('menuSettings')">
+              <span>
+                <strong>Menu món</strong>
+                <small>${menu.length} món · Bấm để xem và chỉnh sửa</small>
+              </span>
+              <span class="settings-chevron" id="menuSettingsChevron">⌄</span>
+            </button>
+            <div class="settings-accordion-body hidden" id="menuSettings">
+              <div class="settings-section-toolbar">
+                <span class="muted">Danh sách món</span>
+                <button class="btn primary" onclick="menuForm()">+ Thêm món</button>
+              </div>
+              <div class="table-card">
+                <table class="data-table">
+                  <thead>
+                    <tr><th>Món</th><th>Danh mục</th><th>Giá</th><th>Thao tác</th></tr>
+                  </thead>
+                  <tbody>
+                    ${menu.map(m => `
+                      <tr>
+                        <td><img class="avatar" src="${m.image || '/assets/logo.png'}">${esc(m.name)}</td>
+                        <td>${esc(m.category)}</td>
+                        <td>${money(m.price)}</td>
+                        <td>
+                          <button class="btn small" onclick='menuForm(${JSON.stringify(m)})'>Sửa</button>
+                          <button class="btn small danger" onclick="deleteMenu(${m.id})">Xóa</button>
+                        </td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-accordion">
+            <button type="button" class="settings-accordion-head" onclick="toggleSettingsSection('toppingSettings')">
+              <span>
+                <strong>Topping</strong>
+                <small>${state.toppings.length} topping · Bấm để xem và chỉnh sửa</small>
+              </span>
+              <span class="settings-chevron" id="toppingSettingsChevron">⌄</span>
+            </button>
+            <div class="settings-accordion-body hidden" id="toppingSettings">
+              <div class="settings-section-toolbar">
+                <span class="muted">Danh sách topping</span>
+                <button class="btn" onclick="toppingForm()">+ Thêm topping</button>
+              </div>
+              <div class="settings-topping-list">
+                ${state.toppings.map(t => `
+                  <div class="topping settings-topping-row">
+                    <span><strong>${esc(t.name)}</strong> · ${money(t.price)}</span>
+                    <div>
+                      <button class="btn small" onclick='toppingForm(${JSON.stringify(t)})'>Sửa</button>
+                      <button class="btn small danger" onclick="deleteTop(${t.id})">Xóa</button>
+                    </div>
+                  </div>
+                `).join('') || '<div class="empty">Chưa có topping</div>'}
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        <section class="section-card settings-qr-card">
+          <h3>QR chuyển khoản</h3>
+          <p class="muted">Ảnh này sẽ hiện cho nhân viên khi chọn chuyển khoản.</p>
+          ${state.qr ? `<img class="qr-preview" src="${state.qr}">` : '<div class="empty">Chưa có QR</div>'}
+          <form id="qrForm" style="margin-top:14px">
+            <input type="file" id="qrFile" accept="image/*">
+            <button class="btn primary" style="margin-top:10px" type="submit">Upload QR</button>
+          </form>
+        </section>
+      </div>
+    </div>`;
+
   $('#qrForm').onsubmit = uploadQR;
+}
+
+function toggleSettingsSection(sectionId) {
+  const body = $('#' + sectionId);
+  if (!body) return;
+
+  const willOpen = body.classList.contains('hidden');
+  body.classList.toggle('hidden', !willOpen);
+
+  const chevron = $('#' + sectionId + 'Chevron');
+  if (chevron) chevron.classList.toggle('open', willOpen);
 }
 
 function categoryForm(c = {}, returnToMenu = false) {
@@ -712,8 +833,29 @@ async function deleteMenu(id) {
     }
   });
 }
-function toppingForm() { openModal(`<h3>Thêm topping</h3><label>Tên topping<input id="tName"></label><label>Giá<input id="tPrice" type="number" value="0"></label><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="saveTop()">Lưu</button></div>`); }
-async function saveTop() { await api('/api/admin/toppings', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('#tName').value,price:$('#tPrice').value})}); closeModal(); await loadBase(); renderSettings(); }
+function toppingForm(t = {}) {
+  openModal(`
+    <h3>${t.id ? 'Sửa topping' : 'Thêm topping'}</h3>
+    <label>Tên topping<input id="tName" value="${esc(t.name || '')}" required></label>
+    <label>Giá<input id="tPrice" type="number" value="${Number(t.price || 0)}" min="0" required></label>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Hủy</button>
+      <button class="btn primary" onclick="saveTop(${t.id || 'null'})">Lưu</button>
+    </div>`);
+}
+async function saveTop(id = null) {
+  const body = {name:$('#tName').value.trim(), price:$('#tPrice').value};
+  if (!body.name) return toast('Nhập tên topping', true);
+  await api(id ? `/api/admin/toppings/${id}` : '/api/admin/toppings', {
+    method:id ? 'PUT' : 'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  closeModal();
+  await loadBase();
+  renderSettings();
+  toast(id ? 'Đã sửa topping' : 'Đã thêm topping');
+}
 async function deleteTop(id) {
   const t = state.toppings?.find(x => x.id === id);
   confirmDelete({
@@ -834,5 +976,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();
