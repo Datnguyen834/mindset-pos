@@ -56,6 +56,22 @@ CREATE TABLE IF NOT EXISTS customers (
 
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 
+CREATE TABLE IF NOT EXISTS member_rewards (
+  id SERIAL PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  earned_year INTEGER NOT NULL,
+  tier_key VARCHAR(20) NOT NULL,
+  tier_name VARCHAR(40) NOT NULL,
+  reward_name VARCHAR(120) NOT NULL,
+  redeemed_at TIMESTAMPTZ,
+  redeemed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(customer_id, earned_year)
+);
+CREATE INDEX IF NOT EXISTS idx_member_rewards_customer ON member_rewards(customer_id, earned_year);
+
+
 CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),

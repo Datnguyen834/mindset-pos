@@ -504,6 +504,15 @@ function fmtBirthDate(x) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : esc(String(x));
 }
 
+function memberTierInfo(spend) {
+  const n = Number(spend || 0);
+  if (n >= 5000000) return {key:'diamond',name:'Kim cương',threshold:5000000,reward:'Gấu bông to'};
+  if (n >= 2000000) return {key:'platinum',name:'Bạch kim',threshold:2000000,reward:'Gấu bông nhỏ'};
+  if (n >= 1000000) return {key:'gold',name:'Vàng',threshold:1000000,reward:'2 ly nước free'};
+  if (n >= 500000) return {key:'silver',name:'Bạc',threshold:500000,reward:'1 ly nước free'};
+  return {key:null,name:'Chưa có hạng',threshold:500000,reward:''};
+}
+
 function nav() {
   const admin = ['admin','manager'].includes(state.user.role);
   const items = admin
@@ -1195,6 +1204,15 @@ function renderCustomerFoundModal(customer = null, isSearchPreview = false) {
   const canRedeem = possiblePoints > 0 && !alreadyRedeemed && (state.checkoutCustomer?.customer ? true : (isSearchPreview && state.cart.length > 0));
   const redeemButtonClass = canRedeem ? 'customer-point-action active' : 'customer-point-action disabled';
   const redeemLabel = alreadyRedeemed ? 'Đã dùng điểm' : 'Discount point';
+  const tier = c.tierName ? {name:c.tierName} : memberTierInfo(c.totalSpend);
+  const coupon = c.coupon;
+  const couponHtml = tier.name !== 'Chưa có hạng' ? `
+    <div class="member-coupon-card ${coupon?.redeemedAt ? 'used' : 'available'}">
+      <div class="member-coupon-head"><span>🎁 Quà thành viên</span><b>Hạng ${esc(tier.name)}</b></div>
+      <div class="member-coupon-reward"><strong>${esc(coupon?.rewardName || tier.reward)}</strong><span>${coupon?.redeemedAt ? 'Coupon đã sử dụng trong năm nay' : 'Quý khách có quà. Bạn có muốn nhận không?'}</span></div>
+      ${coupon?.redeemedAt ? '<div class="member-coupon-used">✓ Đã sử dụng</div>' : `<button type="button" class="btn primary member-coupon-use" onclick="useMemberCoupon(${c.id})">Sử dụng coupon</button>`}
+    </div>` : `
+    <div class="member-coupon-card unavailable"><div class="member-coupon-head"><span>🎁 Quà thành viên</span><b>Chưa đạt hạng</b></div><div class="member-coupon-reward"><span>Còn ${money(500000 - Number(c.totalSpend || 0))} để đạt hạng Bạc.</span></div></div>`;
 
   openModal(`<div class="customer-loyalty-modal">
     <div class="customer-modal-head">
@@ -1202,15 +1220,33 @@ function renderCustomerFoundModal(customer = null, isSearchPreview = false) {
       <button class="modal-close-x" type="button" onclick="closeCustomerPicker()">×</button>
     </div>
     <div class="customer-point-card customer-info-grid">
+      <div><span>Hạng thành viên</span><strong>${esc(tier.name)}</strong></div>
       <div><span>Ngày sinh</span><strong>${fmtBirthDate(c.birthDate)}</strong></div>
       <div><span>Số điểm hiện có</span><strong>${Number(c.points || 0)} điểm</strong></div>
-      <div><span>Tổng chi tiêu</span><strong>${money(Number(c.totalSpend || 0))}</strong></div>
+      <div><span>Tổng chi tiêu năm nay</span><strong>${money(Number(c.totalSpend || 0))}</strong></div>
       <div><span>Số điện thoại</span><strong>${esc(c.phone)}</strong></div>
     </div>
+    ${couponHtml}
     <button type="button" class="${redeemButtonClass}" ${canRedeem ? `onclick="chooseCustomerOption(true)"` : 'disabled'}>
       <span>${redeemLabel}</span>
     </button>
   </div>`);
+}
+
+async function useMemberCoupon(customerId) {
+  try {
+    const d = await api(`/api/customers/${customerId}/reward/use`, {method:'POST'});
+    toast(`Đã sử dụng coupon: ${d.reward.rewardName}`);
+    if (state.pendingCustomerSelection?.id === customerId) {
+      state.pendingCustomerSelection = {...state.pendingCustomerSelection, coupon:d.reward};
+      renderCustomerFoundModal(state.pendingCustomerSelection, true);
+    } else if (state.checkoutCustomer?.customer?.id === customerId) {
+      state.checkoutCustomer.customer = {...state.checkoutCustomer.customer, coupon:d.reward};
+      renderCustomerFoundModal(state.checkoutCustomer.customer, false);
+    } else {
+      searchMember();
+    }
+  } catch (e) { toast(e.message || 'Không sử dụng được coupon', true); }
 }
 
 function chooseCustomerOption(redeem) {
@@ -1580,13 +1616,17 @@ async function searchMember() {
 }
 
 function renderMemberResult(m) {
+  const tier = m.tierName ? {name:m.tierName,reward:m.coupon?.rewardName || memberTierInfo(m.totalSpend).reward} : memberTierInfo(m.totalSpend);
+  const coupon = m.coupon;
+  const couponHtml = tier.name !== 'Chưa có hạng' ? `<div class="member-coupon-card ${coupon?.redeemedAt ? 'used' : 'available'}"><div class="member-coupon-head"><span>🎁 Coupon</span><b>Hạng ${esc(tier.name)}</b></div><div class="member-coupon-reward"><strong>${esc(coupon?.rewardName || tier.reward)}</strong><span>${coupon?.redeemedAt ? 'Đã sử dụng trong năm nay' : 'Đang sẵn sàng để nhân viên sử dụng'}</span></div>${coupon?.redeemedAt ? '<div class="member-coupon-used">✓ Đã sử dụng</div>' : `<button class="btn primary member-coupon-use" onclick="useMemberCoupon(${m.id})">Sử dụng coupon</button>`}</div>` : '';
   $('.member-result-card').innerHTML = `<div class="member-detail-grid">
     <div><span>Số điện thoại</span><b>${esc(m.phone)}</b></div>
     <div><span>Họ tên</span><b>${esc(m.fullName)}</b></div>
     <div><span>Ngày tháng năm sinh</span><b>${fmtBirthDate(m.birthDate)}</b></div>
+    <div><span>Hạng thành viên</span><b>${esc(tier.name)}</b></div>
     <div><span>Số điểm</span><b>${Number(m.points || 0)} điểm</b></div>
     <div><span>Tổng chi tiêu năm nay</span><b>${money(Number(m.totalSpend || 0))}</b></div>
-  </div><div class="member-result-actions"><button class="btn primary" onclick='memberForm(${JSON.stringify(m)})'>Chỉnh sửa</button></div>`;
+  </div>${couponHtml}<div class="member-result-actions"><button class="btn primary" onclick='memberForm(${JSON.stringify(m)})'>Chỉnh sửa</button></div>`;
 }
 
 function memberForm(m) {
@@ -2087,5 +2127,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,toggleCatVisibility,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,searchMember,memberForm,saveMember,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,toggleCatVisibility,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,searchMember,memberForm,saveMember,useMemberCoupon,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();

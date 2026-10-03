@@ -169,13 +169,43 @@ app.get('/api/settings/discount-rules',auth,async(req,res)=>{ const r=await q("S
 
 const POINT_EARN_VALUE = 20000;
 const POINT_DISCOUNT_VALUE = 1000;
+const MEMBER_TIERS = [
+  { key:'diamond', name:'Kim cương', threshold:5000000, reward:'Gấu bông to' },
+  { key:'platinum', name:'Bạch kim', threshold:2000000, reward:'Gấu bông nhỏ' },
+  { key:'gold', name:'Vàng', threshold:1000000, reward:'2 ly nước free' },
+  { key:'silver', name:'Bạc', threshold:500000, reward:'1 ly nước free' },
+];
+function memberTierForSpend(totalSpend){ return MEMBER_TIERS.find(t => Number(totalSpend||0) >= t.threshold) || null; }
+async function syncMemberCoupon(customerId, totalSpend, db = pool) {
+  const tier = memberTierForSpend(totalSpend);
+  if (!tier) return null;
+  const year = new Date().getFullYear();
+  const client = db === pool ? null : db;
+  const run = async (sql, params) => client ? client.query(sql, params) : q(sql, params);
+  const existing = await run('SELECT id,tier_key,tier_name,reward_name,redeemed_at,earned_year FROM member_rewards WHERE customer_id=$1 AND earned_year=$2 ORDER BY id DESC LIMIT 1',[customerId,year]);
+  if (!existing.rowCount) {
+    const r = await run('INSERT INTO member_rewards(customer_id,earned_year,tier_key,tier_name,reward_name) VALUES($1,$2,$3,$4,$5) RETURNING id,tier_key AS "tierKey",tier_name AS "tierName",reward_name AS "rewardName",redeemed_at AS "redeemedAt"',[customerId,year,tier.key,tier.name,tier.reward]);
+    return r.rows[0];
+  }
+  const current = existing.rows[0];
+  const rank = {silver:1,gold:2,platinum:3,diamond:4};
+  if ((rank[tier.key]||0) > (rank[current.tier_key]||0)) {
+    const r = await run('UPDATE member_rewards SET tier_key=$1,tier_name=$2,reward_name=$3,redeemed_at=NULL,updated_at=NOW() WHERE id=$4 RETURNING id,tier_key AS "tierKey",tier_name AS "tierName",reward_name AS "rewardName",redeemed_at AS "redeemedAt"',[tier.key,tier.name,tier.reward,current.id]);
+    return r.rows[0];
+  }
+  return {id:current.id,tierKey:current.tier_key,tierName:current.tier_name,rewardName:current.reward_name,redeemedAt:current.redeemed_at};
+}
 function normalizePhone(value) { return String(value || '').replace(/\D/g, '').slice(0, 15); }
 
 app.get('/api/customers/search', auth, async (req,res)=>{
   const phone = normalizePhone(req.query.phone);
   if (!phone) return res.status(400).json({message:'Nhập số điện thoại'});
   const r = await q(`SELECT c.id,c.phone,c.full_name AS "fullName",c.birth_date AS "birthDate",c.points,COALESCE((SELECT SUM(o.total) FROM orders o WHERE o.customer_id=c.id AND o.status='paid' AND o.created_at >= date_trunc('year', NOW())),0)::int AS "totalSpend" FROM customers c WHERE c.phone=$1 LIMIT 1`,[phone]);
-  res.json({customer: r.rows[0] || null});
+  if (!r.rowCount) return res.json({customer:null});
+  const c = r.rows[0];
+  const coupon = await syncMemberCoupon(c.id, c.totalSpend);
+  const tier = memberTierForSpend(c.totalSpend);
+  res.json({customer:{...c,tier:tier?.key||null,tierName:tier?.name||'Chưa có hạng',coupon}});
 });
 
 app.post('/api/customers', auth, async (req,res)=>{
@@ -198,7 +228,11 @@ app.get('/api/admin/members/search', auth, adminOnly, async (req,res)=>{
   const phone = normalizePhone(req.query.phone);
   if (!phone) return res.status(400).json({message:'Nhập số điện thoại thành viên'});
   const r = await q(`SELECT c.id,c.phone,c.full_name AS "fullName",c.birth_date AS "birthDate",c.points,COALESCE((SELECT SUM(o.total) FROM orders o WHERE o.customer_id=c.id AND o.status='paid' AND o.created_at >= date_trunc('year', NOW())),0)::int AS "totalSpend",c.created_at AS "createdAt" FROM customers c WHERE c.phone=$1 LIMIT 1`,[phone]);
-  res.json({member:r.rows[0] || null});
+  if (!r.rowCount) return res.json({member:null});
+  const m = r.rows[0];
+  const coupon = await syncMemberCoupon(m.id, m.totalSpend);
+  const tier = memberTierForSpend(m.totalSpend);
+  res.json({member:{...m,tier:tier?.key||null,tierName:tier?.name||'Chưa có hạng',coupon}});
 });
 
 app.put('/api/admin/members/:id', auth, adminOnly, async (req,res)=>{
@@ -209,6 +243,15 @@ app.put('/api/admin/members/:id', auth, adminOnly, async (req,res)=>{
   const r = await q('UPDATE customers SET full_name=$1,birth_date=$2,updated_at=NOW() WHERE id=$3 RETURNING id,phone,full_name AS "fullName",birth_date AS "birthDate",points',[fullName,birthDate,req.params.id]);
   if (!r.rowCount) return res.status(404).json({message:'Không tìm thấy thành viên'});
   res.json({member:r.rows[0]});
+});
+
+app.post('/api/customers/:id/reward/use', auth, async (req,res)=>{
+  const customerId = Number(req.params.id);
+  if (!Number.isInteger(customerId) || customerId <= 0) return res.status(400).json({message:'Thành viên không hợp lệ'});
+  const year = new Date().getFullYear();
+  const r = await q(`UPDATE member_rewards SET redeemed_at=NOW(),redeemed_by=$1,updated_at=NOW() WHERE id=(SELECT id FROM member_rewards WHERE customer_id=$2 AND earned_year=$3 AND redeemed_at IS NULL ORDER BY id DESC LIMIT 1) RETURNING id,tier_key AS "tierKey",tier_name AS "tierName",reward_name AS "rewardName",redeemed_at AS "redeemedAt"`,[req.user.id,customerId,year]);
+  if (!r.rowCount) return res.status(400).json({message:'Coupon chưa có hoặc đã được sử dụng'});
+  res.json({reward:r.rows[0]});
 });
 
 app.post('/api/orders',auth,async(req,res)=>{
@@ -277,6 +320,8 @@ app.post('/api/orders',auth,async(req,res)=>{
       const newPoints = Math.max(0, Number(customer.points||0) - pointsUsed + pointsEarned);
       await client.query('UPDATE customers SET points=$1,updated_at=NOW() WHERE id=$2',[newPoints,customer.id]);
       customer.points=newPoints;
+      const spendNow = await client.query(`SELECT COALESCE(SUM(total),0)::int AS total FROM orders WHERE customer_id=$1 AND status='paid' AND created_at >= date_trunc('year', NOW())`,[customer.id]);
+      await syncMemberCoupon(customer.id, Number(spendNow.rows[0]?.total||0), client);
     }
 
     await client.query('COMMIT');
@@ -665,9 +710,13 @@ app.post('/api/payos/webhook', async (req,res)=>{
           const newPoints=Math.max(0,currentPoints-pointsUsed+pointsEarned);
           await client.query('UPDATE customers SET points=$1,updated_at=NOW() WHERE id=$2',[newPoints,order.customer_id]);
         }
+        const spendNow = await client.query(`SELECT COALESCE(SUM(total),0)::int AS total FROM orders WHERE customer_id=$1 AND status='paid' AND created_at >= date_trunc('year', NOW())`,[order.customer_id]);
+        await client.query(`UPDATE orders SET status='paid' WHERE id=$1`,[order.id]);
+        const spendAfter = Number(spendNow.rows[0]?.total||0) + Number(order.total||0);
+        await syncMemberCoupon(order.customer_id, spendAfter, client);
+      } else {
+        await client.query(`UPDATE orders SET status='paid' WHERE id=$1`,[order.id]);
       }
-
-      await client.query(`UPDATE orders SET status='paid' WHERE id=$1`,[order.id]);
       await client.query('COMMIT');
       console.log('payOS payment confirmed:',{orderCode,amount,reference:data?.reference||null});
       return res.status(200).send('OK');
