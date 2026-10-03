@@ -10,6 +10,7 @@ import path from 'path';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { PayOS } from '@payos/node';
+import QRCode from 'qrcode';
 
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -283,6 +284,7 @@ app.post('/api/orders',auth,async(req,res)=>{
           customer:customer?{id:customer.id,fullName:customer.fullName,points:customer.points}:null,
           checkoutUrl: paymentLink.checkoutUrl || '',
           qrCode: paymentLink.qrCode || '',
+          qrImage: paymentLink.qrCode ? await QRCode.toDataURL(paymentLink.qrCode, { width: 300, margin: 1, errorCorrectionLevel: 'M' }) : '',
           paymentLinkId: paymentLink.paymentLinkId || paymentLink.id || null,
         });
       } catch (payError) {
@@ -532,6 +534,7 @@ app.post('/api/payos/create-payment', auth, async (req,res)=>{
       total: Number(order.total),
       checkoutUrl: paymentLink.checkoutUrl || '',
       qrCode: paymentLink.qrCode || '',
+      qrImage: paymentLink.qrCode ? await QRCode.toDataURL(paymentLink.qrCode, { width: 300, margin: 1, errorCorrectionLevel: 'M' }) : '',
       paymentLinkId: paymentLink.paymentLinkId || paymentLink.id || null,
     });
   }catch(e){

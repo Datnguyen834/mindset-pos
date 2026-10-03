@@ -1012,7 +1012,7 @@ async function startTransferPayment() {
 
     if (!d.qrCode) throw new Error('payOS không trả về mã QR cho đơn này');
     transferPaymentOrderId = d.orderId;
-    updateTransferPaymentModal({orderId:d.orderId,total:d.total,qrCode:d.qrCode,checkoutUrl:d.checkoutUrl});
+    updateTransferPaymentModal({orderId:d.orderId,total:d.total,qrCode:d.qrCode,qrImage:d.qrImage,checkoutUrl:d.checkoutUrl});
     beginTransferPaymentPolling(d.orderId);
   } catch (e) {
     transferPaymentOrderId = null;
@@ -1022,7 +1022,7 @@ async function startTransferPayment() {
 }
 
 function renderTransferPaymentModal(p) {
-  const qrId = 'payosQrCanvas';
+  const qrId = 'payosQrImage';
   openModal(`<div class="checkout-loyalty-summary payos-transfer-modal">
     <div class="eyebrow">Thanh toán chuyển khoản</div>
     <h3>Quét mã QR để thanh toán</h3>
@@ -1030,7 +1030,7 @@ function renderTransferPaymentModal(p) {
     <div class="payos-qr-wrap">
       <div class="payos-qr-stage">
         <div id="payosQrLoading" class="payos-qr-loading"><span class="payos-spinner"></span><b>Đang tạo mã QR...</b></div>
-        <canvas id="${qrId}" width="300" height="300" hidden></canvas>
+        <img id="${qrId}" class="payos-qr-image" alt="Mã QR thanh toán payOS" hidden>
       </div>
     </div>
     <div class="payos-waiting"><span class="payos-spinner"></span><b>Đang chờ ngân hàng xác nhận...</b></div>
@@ -1042,32 +1042,26 @@ function renderTransferPaymentModal(p) {
       <button class="btn" onclick="cancelTransferPayment()">Hủy</button>
     </div>
   </div>`);
-  if (p.qrCode) updateTransferPaymentModal(p);
+  if (p.qrImage) updateTransferPaymentModal(p);
 }
 
 function updateTransferPaymentModal(p) {
-  const canvas = document.getElementById('payosQrCanvas');
+  const img = document.getElementById('payosQrImage');
   const loading = document.getElementById('payosQrLoading');
   if ($('#payosOrderNumber')) $('#payosOrderNumber').textContent = `#${p.orderId}`;
   if ($('#payosOrderTotal')) $('#payosOrderTotal').textContent = money(p.total);
   if ($('#payosBillTotal')) $('#payosBillTotal').textContent = money(p.total);
   if ($('#payosPaymentStatus')) $('#payosPaymentStatus').textContent = 'Chờ thanh toán';
-  if (!canvas || !p.qrCode) return;
-  if (!window.QRCode) {
-    if (loading) loading.innerHTML = '<b>Không tải được bộ tạo QR</b>';
-    return;
-  }
-  QRCode.toCanvas(canvas, p.qrCode, {
-    width: 300, margin: 0, errorCorrectionLevel: 'M'
-  }, (err) => {
-    if (err) {
-      console.error('QR render error:', err);
-      if (loading) loading.innerHTML = '<b>Không thể hiển thị mã QR</b>';
-      return;
-    }
-    canvas.hidden = false;
+  if (!img || !p.qrImage) return;
+  img.onload = () => {
+    img.hidden = false;
     if (loading) loading.style.display = 'none';
-  });
+  };
+  img.onerror = () => {
+    console.error('QR image render error');
+    if (loading) loading.innerHTML = '<b>Không thể hiển thị mã QR</b>';
+  };
+  img.src = p.qrImage;
 }
 
 function beginTransferPaymentPolling(orderId) {
