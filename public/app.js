@@ -894,6 +894,13 @@ function cashReceived() {
 }
 
 function changeCashDenomination(value, delta) {
+  const info = cartDiscountInfo();
+  const received = cashReceived();
+
+  // Đủ hoặc dư tiền rồi thì không cho cộng thêm mệnh giá.
+  // Vẫn cho phép "-" để nhân viên sửa lại nếu chọn nhầm.
+  if (delta > 0 && received >= info.total) return;
+
   const current = Number(cashPaymentState.counts[value] || 0);
   cashPaymentState.counts[value] = Math.max(0, current + delta);
   renderCashPaymentModal();
@@ -906,9 +913,10 @@ function renderCashPaymentModal() {
   const missing = Math.max(0, info.total - received);
   const rows = CASH_DENOMINATIONS.map(value => {
     const count = Number(cashPaymentState.counts[value] || 0);
-    return `<button type="button" class="cash-denom" onclick="changeCashDenomination(${value},1)">
+    const locked = received >= info.total;
+    return `<button type="button" class="cash-denom ${locked ? 'cash-denom-locked' : ''}" onclick="changeCashDenomination(${value},1)" aria-disabled="${locked}">
       <span class="cash-denom-value">${money(value)}</span>
-      <span class="cash-denom-controls"><span class="cash-minus" onclick="event.stopPropagation();changeCashDenomination(${value},-1)">−</span><b>${count}</b><span class="cash-plus">+</span></span>
+      <span class="cash-denom-controls"><span class="cash-minus" onclick="event.stopPropagation();changeCashDenomination(${value},-1)">−</span><b>${count}</b><span class="cash-plus ${locked ? 'cash-plus-disabled' : ''}">+</span></span>
     </button>`;
   }).join('');
 

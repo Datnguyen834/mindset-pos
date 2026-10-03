@@ -1068,3 +1068,13 @@ body.modal-open { overflow: hidden; }
   .cash-summary{grid-template-columns:1fr}
   .cash-denom-grid{grid-template-columns:repeat(2,1fr)}
 }
+
+/* Khóa thêm mệnh giá khi tiền khách đưa đã đủ/dư bill.
+   Nút "-" vẫn hoạt động để sửa lại số tờ. */
+.cash-denom-locked {
+  opacity: .72;
+}
+.cash-denom-locked .cash-plus-disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
