@@ -1017,7 +1017,7 @@ function openCustomerLoyaltyModal(mode = 'cart') {
       <div><span class="eyebrow">Khách hàng</span><h3>Chọn khách hàng</h3><p class="muted">Tìm bằng số điện thoại để ghi nhận khách cho đơn.</p></div>
       <button class="modal-close-x" type="button" onclick="closeCustomerPicker()">×</button>
     </div>
-    <div class="customer-search-row"><input id="customerPhone" inputmode="numeric" maxlength="15" placeholder="Nhập số điện thoại khách" onkeydown="if(event.key==='Enter')searchCustomerForCheckout()"><button class="btn primary" onclick="searchCustomerForCheckout()">Tìm khách</button></div>
+    <div class="customer-search-row"><input id="customerPhone" inputmode="numeric" maxlength="15" placeholder="Nhập số điện thoại khách" onkeydown="if(event.key==='Enter')searchCustomerForCheckout()"><button class="btn primary" onclick="searchCustomerForCheckout()">Tìm</button></div>
     <button type="button" class="btn customer-skip-btn" onclick="closeCustomerPicker()">Đóng</button>
   </div>`);
 }
