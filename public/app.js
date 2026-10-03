@@ -55,8 +55,46 @@ function initInteractiveCat() {
 
   let x = Math.max(0, Math.random() * Math.max(1, window.innerWidth - W));
   let y = Math.max(0, Math.random() * Math.max(1, window.innerHeight - W));
-  let dirX = Math.random() > .5 ? 1 : -1;
-  let dirY = (Math.random() - .5) * .35;
+  // 8 hướng rõ ràng: trái, phải, lên, xuống và 4 đường chéo.
+  // Tốc độ được chuẩn hóa để đi chéo không nhanh hơn đi thẳng.
+  const DIRECTIONS = [
+    [ 1, 0], [-1, 0], [0, 1], [0,-1],
+    [ .707, .707], [ .707,-.707], [-.707, .707], [-.707,-.707]
+  ];
+  let dirX = 1;
+  let dirY = 0;
+  let directionTimer = null;
+
+  function chooseDirection(preferred = null) {
+    let candidates = DIRECTIONS;
+    if (preferred) {
+      candidates = DIRECTIONS.filter(([dx,dy]) => {
+        return (preferred.x === 0 || Math.sign(dx) === preferred.x) &&
+               (preferred.y === 0 || Math.sign(dy) === preferred.y);
+      });
+      if (!candidates.length) candidates = DIRECTIONS;
+    }
+    const [dx, dy] = candidates[Math.floor(Math.random() * candidates.length)];
+    dirX = dx;
+    dirY = dy;
+    setDirectionClass();
+  }
+
+  function scheduleDirectionChange() {
+    if (directionTimer) clearTimeout(directionTimer);
+    directionTimer = setTimeout(() => {
+      chooseDirection();
+      scheduleDirectionChange();
+    }, 2800 + Math.random() * 3200);
+  }
+
+  function clearDirectionTimer() {
+    if (directionTimer) {
+      clearTimeout(directionTimer);
+      directionTimer = null;
+    }
+  }
+
   let mode = 'walk';
   let framePos = 0;
   let lastTime = performance.now();
@@ -122,8 +160,9 @@ function initInteractiveCat() {
     framePos = 0;
     cat.classList.remove('reacting', 'dragging');
     lastFrameTime = performance.now();
-    setDirectionClass();
+    chooseDirection();
     setFrame(ANIM.walk[0]);
+    scheduleDirectionChange();
     scheduleRandomAction();
   }
 
@@ -168,10 +207,11 @@ function initInteractiveCat() {
       const dt = Math.min(40, now - lastTime);
       const b = bounds();
       x += dirX * 145 * dt / 1000;
-      y += dirY * 55 * dt / 1000;
-      if (x >= b.maxX) { x = b.maxX; dirX = -1; setDirectionClass(); }
-      if (x <= 0) { x = 0; dirX = 1; setDirectionClass(); }
-      if (y >= b.maxY || y <= 0) dirY *= -1;
+      y += dirY * 145 * dt / 1000;
+      if (x >= b.maxX) { x = b.maxX; dirX = -Math.abs(dirX || 1); setDirectionClass(); }
+      else if (x <= 0) { x = 0; dirX = Math.abs(dirX || 1); setDirectionClass(); }
+      if (y >= b.maxY) { y = b.maxY; dirY = -Math.abs(dirY || 1); }
+      else if (y <= 0) { y = 0; dirY = Math.abs(dirY || 1); }
       renderPosition();
       nextFrame(now);
       if (now - started < duration) requestAnimationFrame(runLoop);
@@ -249,7 +289,8 @@ function initInteractiveCat() {
     cat.classList.remove('dragging');
     mode = 'walk';
     framePos = 0;
-    setDirectionClass();
+    chooseDirection();
+    scheduleDirectionChange();
     setFrame(ANIM.walk[0]);
     if (didDrag) {
       // Không coi thao tác kéo là một cú click.
@@ -266,11 +307,12 @@ function initInteractiveCat() {
   cat.addEventListener('pointercancel', pointerUp);
   cat.addEventListener('dragstart', e => e.preventDefault());
 
-  catController = { stop() { mode = 'idle'; clearActionTimer(); clearRandomTimer(); }, react };
+  catController = { stop() { mode = 'idle'; clearActionTimer(); clearRandomTimer(); clearDirectionTimer(); }, react };
 
-  setDirectionClass();
+  chooseDirection();
   setFrame(ANIM.walk[0]);
   renderPosition();
+  scheduleDirectionChange();
   scheduleRandomAction();
 
   function loop(now) {
@@ -279,16 +321,28 @@ function initInteractiveCat() {
 
     if (!dragging && mode === 'walk') {
       const b = bounds();
+      // Giữ đúng vector hướng: 8 hướng, gồm cả đi chéo rõ ràng.
       x += dirX * WALK_SPEED * dt / 1000;
-      y += dirY * WALK_SPEED * 0.22 * dt / 1000;
-      // Đi lang thang theo cả chiều ngang và dọc, toàn màn hình.
-      if (x >= b.maxX) { x = b.maxX; dirX = -1; setDirectionClass(); }
-      else if (x <= 0) { x = 0; dirX = 1; setDirectionClass(); }
-      if (y >= b.maxY || y <= 0) {
-        y = Math.max(0, Math.min(b.maxY, y));
-        dirY = (Math.random() - .5) * .8;
+      y += dirY * WALK_SPEED * dt / 1000;
+
+      if (x >= b.maxX) {
+        x = b.maxX;
+        dirX = -Math.abs(dirX || 1);
+        setDirectionClass();
+      } else if (x <= 0) {
+        x = 0;
+        dirX = Math.abs(dirX || 1);
+        setDirectionClass();
       }
-      if (Math.random() < 0.003) dirY = (Math.random() - .5) * .8;
+
+      if (y >= b.maxY) {
+        y = b.maxY;
+        dirY = -Math.abs(dirY || 1);
+      } else if (y <= 0) {
+        y = 0;
+        dirY = Math.abs(dirY || 1);
+      }
+
       renderPosition();
       nextFrame(now);
     } else if (!dragging && mode !== 'run') {
