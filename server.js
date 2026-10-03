@@ -442,7 +442,7 @@ app.post('/api/payos/create-payment', auth, async (req,res)=>{
     const paymentLink=await payos.paymentRequests.create({
       orderCode: order.id,
       amount: Number(order.total),
-      description: `MINDSET#${order.id}`,
+      description: `MS${order.id}`, // <= 9 chars for channels where the receiving bank account is not linked through payOS
       returnUrl: `${base}/?payos=success&orderCode=${order.id}`,
       cancelUrl: `${base}/?payos=cancel&orderCode=${order.id}`,
     });

@@ -1030,7 +1030,8 @@ async function startTransferPayment() {
     renderTransferPaymentModal({
       orderId:d.orderId,
       total:d.total,
-      qrCode:p.qrCode
+      qrCode:p.qrCode,
+      checkoutUrl:p.checkoutUrl
     });
     beginTransferPaymentPolling(d.orderId);
   } catch (e) {
@@ -1045,7 +1046,8 @@ function renderTransferPaymentModal(p) {
     <h3>Quét mã QR để thanh toán</h3>
     <p class="muted">Đơn <b>#${p.orderId}</b> · Số tiền <b>${money(p.total)}</b></p>
     <div class="payos-qr-wrap">
-      <canvas id="${qrId}" width="280" height="280" aria-label="Mã QR thanh toán payOS"></canvas>
+      <img id="payosQrImage" class="payos-qr-image" alt="Mã QR thanh toán payOS" src="https://quickchart.io/qr?size=320&margin=2&ecLevel=H&text=${encodeURIComponent(p.qrCode)}">
+      <canvas id="${qrId}" width="300" height="300" hidden></canvas>
     </div>
     <div class="payos-waiting"><span class="payos-spinner"></span><b>Đang chờ ngân hàng xác nhận...</b></div>
     <div class="cash-summary">
@@ -1058,72 +1060,21 @@ function renderTransferPaymentModal(p) {
     </div>
   </div>`);
 
-  renderPayOSQr(p.qrCode);
-}
-
-async function ensureQrCodeLibrary() {
-  if (window.QRCode) return true;
-  const sources = [
-    'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js',
-    'https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js'
-  ];
-  for (const src of sources) {
-    try {
-      await new Promise((resolve, reject) => {
-        const existing = document.querySelector(`script[data-mindset-qrcode="${src}"]`);
-        if (existing) {
-          existing.addEventListener('load', resolve, {once:true});
-          existing.addEventListener('error', reject, {once:true});
-          return;
-        }
-        const script = document.createElement('script');
-        script.src = src;
-        script.async = true;
-        script.dataset.mindsetQrcode = src;
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-      });
-      if (window.QRCode) return true;
-    } catch (_) {}
+  const qrImage = document.getElementById('payosQrImage');
+  if (qrImage) {
+    qrImage.addEventListener('error', () => {
+      // Fallback to the bundled/browser QRCode library when the image service is unavailable.
+      if (window.QRCode && document.getElementById(qrId)) {
+        const canvas = document.getElementById(qrId);
+        canvas.hidden = false;
+        qrImage.style.display = 'none';
+        QRCode.toCanvas(canvas, p.qrCode, {
+          width: 300, margin: 2, errorCorrectionLevel: 'M'
+        }, (err) => { if (err) console.error(err); });
+      }
+    }, {once:true});
   }
-  return false;
-}
-
-async function renderPayOSQr(qrValue) {
-  const wrap = document.querySelector('.payos-qr-wrap');
-  if (!wrap) return;
-  wrap.innerHTML = '<div class="payos-qr-loading">Đang tạo mã QR...</div>';
-  const value = String(qrValue || '').trim();
-  if (!value) {
-    wrap.innerHTML = '<div class="payos-qr-error">Không nhận được mã QR từ payOS.</div>';
-    return;
-  }
-
-  // Chỉ render đúng chuỗi QR do payOS trả về. Không tạo QR từ checkoutUrl
-  // vì đó là link thanh toán, không phải mã QR thanh toán của đơn.
-  const ready = await ensureQrCodeLibrary();
-  if (ready) {
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 280;
-      canvas.height = 280;
-      canvas.className = 'payos-qr-canvas';
-      canvas.setAttribute('aria-label','Mã QR thanh toán payOS');
-      await QRCode.toCanvas(canvas, value, {
-        width: 280,
-        margin: 1,
-        errorCorrectionLevel: 'M',
-      });
-      wrap.innerHTML = '';
-      wrap.appendChild(canvas);
-      return;
-    } catch (e) {
-      console.error('QR render error:', e);
-    }
-  }
-
-  wrap.innerHTML = '<div class="payos-qr-error">Không thể hiển thị mã QR payOS. Vui lòng thử lại.</div>';
+  if (qrImage && qrImage.complete && qrImage.naturalWidth === 0) qrImage.dispatchEvent(new Event('error'));
 }
 
 function beginTransferPaymentPolling(orderId) {
