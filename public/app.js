@@ -14,7 +14,7 @@ let state = {
   paymentMethod: 'cash',
   userList: null,
   settingsOpen: { categorySettings: false, menuSettings: false, toppingSettings: false, discountSettings: false },
-  checkoutCustomer: { customer: null, redeem: false }
+  checkoutCustomer: { customer: null, redeem: false }, customerPickerMode: 'checkout'
 };
 
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
@@ -606,6 +606,10 @@ function renderPOS() {
           <div class="cart-total">
             <div class="total-line"><span>Tạm tính</span><b id="subtotal">0đ</b></div>
             <div class="total-line discount-line" id="discountRow"><span class="discount-label">Discount</span><b id="cartDiscount">-0đ</b></div>
+            <div class="total-line discount-line point-discount-line hidden" id="pointDiscountRow"><span class="discount-label">Discount point</span><b id="cartPointDiscount">-0đ</b></div>
+            <button type="button" class="customer-cart-btn" id="customerCartBtn" onclick="openCustomerLoyaltyModal('cart')">
+              <span>👤 Khách hàng</span><b id="customerCartStatus">Chưa chọn</b>
+            </button>
             <div class="payment-choice">
               <div class="payment-label">Phương thức thanh toán</div>
               <div class="payment-options">
@@ -866,19 +870,44 @@ function drawCart() {
     }).join('');
   }
   const subtotal = cartSubtotal();
-  const discountInfo = cartDiscountInfo(subtotal);
+  const discountInfo = checkoutDiscountInfo(subtotal);
   const discountEl = $('#cartDiscount');
   const discountRow = $('#discountRow');
+  const pointDiscountRow = $('#pointDiscountRow');
+  const pointDiscountEl = $('#cartPointDiscount');
+  const customerBtn = $('#customerCartBtn');
+  const customerStatus = $('#customerCartStatus');
+
   $('#subtotal').textContent = money(subtotal);
   if (discountEl) discountEl.textContent = `-${money(discountInfo.amount)}`;
   if (discountRow) discountRow.querySelector('.discount-label').textContent = discountInfo.percent > 0 ? `Discount - ${discountInfo.percent}%` : 'Discount';
+
+  if (pointDiscountRow && pointDiscountEl) {
+    pointDiscountRow.classList.toggle('hidden', discountInfo.pointsDiscount <= 0);
+    pointDiscountEl.textContent = `-${money(discountInfo.pointsDiscount)}`;
+  }
+
+  if (customerBtn && customerStatus) {
+    const c = state.checkoutCustomer?.customer;
+    if (c) {
+      const used = discountInfo.pointsUsed;
+      customerStatus.textContent = used > 0
+        ? `${c.fullName} · Đã dùng ${used} điểm`
+        : `${c.fullName} · ${Number(c.points || 0)} điểm`;
+      customerBtn.classList.add('has-customer');
+    } else {
+      customerStatus.textContent = 'Chưa chọn';
+      customerBtn.classList.remove('has-customer');
+    }
+  }
+
   $('#cartTotal').textContent = money(discountInfo.total);
   $('#cartCount').textContent = `${state.cart.reduce((s, x) => s + x.quantity, 0)} món`;
 }
 
 function changeQty(i, d) { state.cart[i].quantity = Math.max(1, state.cart[i].quantity + d); drawCart(); }
 function removeCart(i) { state.cart.splice(i, 1); drawCart(); }
-function clearCart() { state.cart = []; drawCart(); }
+function clearCart() { state.cart = []; state.checkoutCustomer = { customer: null, redeem: false }; drawCart(); }
 
 function editCartItem(i) {
   const x = state.cart[i];
@@ -943,12 +972,6 @@ function syncPaymentUI() {
 
 async function checkout() {
   if (!state.cart.length) return toast('Hãy chọn ít nhất một món', true);
-  state.checkoutCustomer = { customer: null, redeem: false };
-  openCustomerLoyaltyModal();
-}
-
-function skipCustomerAndContinue() {
-  state.checkoutCustomer = { customer: null, redeem: false };
   continueCheckoutAfterLoyalty();
 }
 
@@ -956,7 +979,7 @@ function continueCheckoutAfterLoyalty() {
   const info = checkoutDiscountInfo();
   if (state.paymentMethod === 'transfer') {
     if (!state.qr) return toast('Admin chưa upload QR chuyển khoản', true);
-    openModal(`<div class="checkout-loyalty-summary"><div class="eyebrow">Thanh toán</div><h3>Quét QR chuyển khoản</h3><p class="muted">Khách quét mã, kiểm tra giao dịch rồi bấm xác nhận.</p><img class="checkout-qr" src="${state.qr}" alt="QR chuyển khoản"><div class="cash-summary"><div><span>Tổng bill</span><b>${money(info.total)}</b></div><div><span>Discount tự động</span><b>-${money(info.amount - info.pointsDiscount)}</b></div><div><span>Điểm khách hàng</span><b>-${money(info.pointsDiscount)}</b></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('transfer')">Thanh toán thành công</button></div></div>`);
+    openModal(`<div class="checkout-loyalty-summary"><div class="eyebrow">Thanh toán</div><h3>Quét QR chuyển khoản</h3><p class="muted">Khách quét mã, kiểm tra giao dịch rồi bấm xác nhận.</p><img class="checkout-qr" src="${state.qr}" alt="QR chuyển khoản"><div class="cash-summary"><div><span>Tổng bill</span><b>${money(info.total)}</b></div><div><span>Discount tự động</span><b>-${money(info.amount - info.pointsDiscount)}</b></div>${info.pointsDiscount > 0 ? `<div><span>Discount point</span><b>-${money(info.pointsDiscount)}</b></div>` : ''}<div><span>Còn phải thanh toán</span><b>${money(info.total)}</b></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="completePayment('transfer')">Thanh toán thành công</button></div></div>`);
   } else {
     openCashPaymentModal();
   }
@@ -977,44 +1000,73 @@ async function searchCustomerForCheckout() {
   } catch (e) { toast(e.message || 'Không tìm thấy khách hàng', true); }
 }
 
-function openCustomerLoyaltyModal() {
+function openCustomerLoyaltyModal(mode = 'cart') {
+  state.customerPickerMode = mode;
   openModal(`<div class="customer-loyalty-modal">
-    <div class="customer-modal-head"><div><span class="eyebrow">Khách hàng</span><h3>Tích điểm</h3><p class="muted">Mua 20.000đ = 1 điểm · 1 điểm giảm 1.000đ. Tìm số điện thoại để dùng hoặc tích điểm.</p></div><button class="modal-close-x" type="button" onclick="skipCustomerAndContinue()">×</button></div>
+    <div class="customer-modal-head">
+      <div><span class="eyebrow">Khách hàng</span><h3>Chọn khách hàng</h3><p class="muted">Tìm bằng số điện thoại để tích điểm hoặc dùng điểm cho đơn này.</p></div>
+      <button class="modal-close-x" type="button" onclick="closeCustomerPicker()">×</button>
+    </div>
     <div class="customer-search-row"><input id="customerPhone" inputmode="numeric" maxlength="15" placeholder="Nhập số điện thoại khách" onkeydown="if(event.key==='Enter')searchCustomerForCheckout()"><button class="btn primary" onclick="searchCustomerForCheckout()">Tìm khách</button></div>
-    <button type="button" class="btn customer-skip-btn" onclick="skipCustomerAndContinue()">Bỏ qua, không tích điểm</button>
+    <button type="button" class="btn customer-skip-btn" onclick="closeCustomerPicker()">Bỏ qua</button>
   </div>`);
 }
 
 function renderCustomerFoundModal() {
   const c = state.checkoutCustomer.customer;
-  const possiblePoints = Math.min(Number(c.points || 0), Math.floor(cartDiscountInfo().total / CUSTOMER_POINT_DISCOUNT_VALUE));
+  const baseTotal = cartDiscountInfo().total;
+  const possiblePoints = Math.min(Number(c.points || 0), Math.floor(baseTotal / CUSTOMER_POINT_DISCOUNT_VALUE));
   const possibleDiscount = possiblePoints * CUSTOMER_POINT_DISCOUNT_VALUE;
-  const afterPoints = Math.max(0, cartDiscountInfo().total - possibleDiscount);
+  const afterPoints = Math.max(0, baseTotal - possibleDiscount);
   openModal(`<div class="customer-loyalty-modal">
-    <div class="customer-modal-head"><div><span class="eyebrow">Khách hàng</span><h3>${esc(c.fullName)}</h3><p class="muted">${esc(c.phone)}</p></div><button class="modal-close-x" type="button" onclick="skipCustomerAndContinue()">×</button></div>
-    <div class="customer-point-card"><div><span>Số điểm hiện có</span><strong>${Number(c.points || 0)} điểm</strong></div><div><span>Giá trị điểm</span><strong>${money(Number(c.points || 0) * CUSTOMER_POINT_DISCOUNT_VALUE)}</strong></div></div>
+    <div class="customer-modal-head">
+      <div><span class="eyebrow">Khách hàng</span><h3>${esc(c.fullName)}</h3><p class="muted">${esc(c.phone)}</p></div>
+      <button class="modal-close-x" type="button" onclick="closeCustomerPicker()">×</button>
+    </div>
+    <div class="customer-point-card">
+      <div><span>Số điểm hiện có</span><strong>${Number(c.points || 0)} điểm</strong></div>
+      <div><span>Giá trị điểm</span><strong>${money(Number(c.points || 0) * CUSTOMER_POINT_DISCOUNT_VALUE)}</strong></div>
+    </div>
     <p class="customer-question">Khách có muốn trừ điểm cho hóa đơn này không?</p>
-    ${Number(c.points || 0) > 0 ? `<button type="button" class="customer-choice redeem" onclick="chooseCustomerOption(true)"><span>Trừ mặc định ${possiblePoints} điểm</span><b>Giảm ${money(possibleDiscount)} → Còn ${money(afterPoints)}</b><small>Hệ thống tự trừ số điểm tối đa: min(điểm hiện có, giá trị hóa đơn)</small></button>` : '<div class="customer-empty-points">Khách chưa có điểm. Hóa đơn này sẽ được cộng điểm sau khi thanh toán.</div>'}
-    <button type="button" class="customer-choice" onclick="chooseCustomerOption(false)"><span>Không trừ điểm</span><b>Tích thêm ${Math.floor(cartDiscountInfo().total / CUSTOMER_POINT_EARN_VALUE)} điểm sau thanh toán</b></button>
+    ${possiblePoints > 0
+      ? `<button type="button" class="customer-choice redeem" onclick="chooseCustomerOption(true)">
+          <span>Dùng ${possiblePoints} điểm</span><b>Giảm ${money(possibleDiscount)} · Còn ${money(afterPoints)}</b>
+        </button>`
+      : '<div class="customer-empty-points">Khách chưa có đủ điểm để giảm hóa đơn này.</div>'}
+    <button type="button" class="customer-choice" onclick="chooseCustomerOption(false)">
+      <span>Không dùng điểm</span><b>Tích thêm sau thanh toán</b>
+    </button>
   </div>`);
 }
 
 function chooseCustomerOption(redeem) {
   state.checkoutCustomer.redeem = !!redeem;
+  if (state.customerPickerMode === 'cart') {
+    closeModal();
+    drawCart();
+    toast(redeem ? `Đã dùng ${checkoutDiscountInfo().pointsUsed} điểm` : 'Đã chọn khách hàng');
+    return;
+  }
   continueCheckoutAfterLoyalty();
 }
 
 function renderCustomerNotFoundModal(phone) {
   openModal(`<div class="customer-loyalty-modal">
-    <div class="customer-modal-head"><div><span class="eyebrow">Khách hàng</span><h3>Chưa có tài khoản</h3><p class="muted">Số ${esc(phone)} chưa được đăng ký.</p></div><button class="modal-close-x" type="button" onclick="skipCustomerAndContinue()">×</button></div>
+    <div class="customer-modal-head">
+      <div><span class="eyebrow">Khách hàng</span><h3>Chưa có tài khoản</h3><p class="muted">Số ${esc(phone)} chưa được đăng ký.</p></div>
+      <button class="modal-close-x" type="button" onclick="closeCustomerPicker()">×</button>
+    </div>
     <div class="customer-not-found"><strong>Không tìm thấy khách hàng.</strong><span>Bạn có muốn tạo tài khoản mới để bắt đầu tích điểm không?</span></div>
-    <div class="modal-actions"><button class="btn" onclick="skipCustomerAndContinue()">Không, bỏ qua</button><button class="btn primary" onclick="showCreateCustomerForm('${esc(phone)}')">Có, tạo tài khoản</button></div>
+    <div class="modal-actions"><button class="btn" onclick="closeCustomerPicker()">Không, bỏ qua</button><button class="btn primary" onclick="showCreateCustomerForm('${esc(phone)}')">Có, tạo tài khoản</button></div>
   </div>`);
 }
 
 function showCreateCustomerForm(phone) {
   openModal(`<div class="customer-loyalty-modal">
-    <div class="customer-modal-head"><div><span class="eyebrow">Khách hàng mới</span><h3>Tạo tài khoản</h3><p class="muted">Số điện thoại: ${esc(phone)}</p></div><button class="modal-close-x" type="button" onclick="skipCustomerAndContinue()">×</button></div>
+    <div class="customer-modal-head">
+      <div><span class="eyebrow">Khách hàng mới</span><h3>Tạo tài khoản</h3><p class="muted">Số điện thoại: ${esc(phone)}</p></div>
+      <button class="modal-close-x" type="button" onclick="closeCustomerPicker()">×</button>
+    </div>
     <label class="customer-name-label">Họ tên khách hàng<input id="newCustomerName" autocomplete="name" placeholder="Nhập họ tên"></label>
     <div class="modal-actions"><button class="btn" onclick="renderCustomerNotFoundModal('${esc(phone)}')">Quay lại</button><button class="btn primary" onclick="createCustomerAndContinue('${esc(phone)}')">Tạo tài khoản</button></div>
   </div>`);
@@ -1026,8 +1078,28 @@ async function createCustomerAndContinue(phone) {
   try {
     const d = await api('/api/customers', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({phone,fullName})});
     state.checkoutCustomer = { customer: d.customer, redeem: false };
-    continueCheckoutAfterLoyalty();
+    if (state.customerPickerMode === 'cart') {
+      closeModal();
+      drawCart();
+      toast(`Đã chọn khách hàng ${d.customer.fullName}`);
+    } else {
+      continueCheckoutAfterLoyalty();
+    }
   } catch (e) { toast(e.message || 'Không tạo được tài khoản', true); }
+}
+
+function closeCustomerPicker() {
+  closeModal();
+}
+
+function skipCustomerAndContinue() {
+  state.checkoutCustomer = { customer: null, redeem: false };
+  if (state.customerPickerMode === 'cart') {
+    closeModal();
+    drawCart();
+    return;
+  }
+  continueCheckoutAfterLoyalty();
 }
 
 const CASH_DENOMINATIONS = [500000,200000,100000,50000,20000,10000,5000,2000,1000];
@@ -1708,5 +1780,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,uploadQR,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();
