@@ -608,8 +608,11 @@ function renderPOS() {
           <div id="cartItems" class="cart-items"></div>
           <div class="cart-total">
             <div class="total-line"><span>Tạm tính</span><b id="subtotal">0đ</b></div>
-            <div class="total-line discount-line" id="discountRow"><span class="discount-label">Discount</span><b id="cartDiscount">-0đ</b></div>
-            <div class="total-line discount-line point-discount-line hidden" id="pointDiscountRow"><span class="discount-label">Discount point</span><b id="cartPointDiscount">-0đ</b></div>
+            <div class="total-line discount-line" id="discountRow"><span class="discount-label">Total Discount</span><b id="cartDiscount">-0đ</b></div>
+            <div class="discount-breakdown">
+              <div class="discount-subline hidden" id="couponDiscountRow"><span>Discount coupon</span><b id="cartCouponDiscount">-0đ</b></div>
+              <div class="discount-subline hidden" id="pointDiscountRow"><span>Discount point</span><b id="cartPointDiscount">-0đ</b></div>
+            </div>
             <div class="payment-choice">
               <div class="payment-label">Phương thức thanh toán</div>
               <div class="payment-options">
@@ -873,6 +876,8 @@ function drawCart() {
   const discountInfo = checkoutDiscountInfo(subtotal);
   const discountEl = $('#cartDiscount');
   const discountRow = $('#discountRow');
+  const couponDiscountRow = $('#couponDiscountRow');
+  const couponDiscountEl = $('#cartCouponDiscount');
   const pointDiscountRow = $('#pointDiscountRow');
   const pointDiscountEl = $('#cartPointDiscount');
   const customerBtn = $('#customerCartBtn');
@@ -880,7 +885,12 @@ function drawCart() {
 
   $('#subtotal').textContent = money(subtotal);
   if (discountEl) discountEl.textContent = `-${money(discountInfo.amount)}`;
-  if (discountRow) discountRow.querySelector('.discount-label').textContent = discountInfo.percent > 0 ? `Discount - ${discountInfo.percent}%` : 'Discount';
+  if (discountRow) discountRow.querySelector('.discount-label').textContent = 'Total Discount';
+
+  if (couponDiscountRow && couponDiscountEl) {
+    couponDiscountRow.classList.toggle('hidden', discountInfo.amount <= discountInfo.pointsDiscount);
+    couponDiscountEl.textContent = `-${money(discountInfo.amount - discountInfo.pointsDiscount)}`;
+  }
 
   if (pointDiscountRow && pointDiscountEl) {
     pointDiscountRow.classList.toggle('hidden', discountInfo.pointsDiscount <= 0);
