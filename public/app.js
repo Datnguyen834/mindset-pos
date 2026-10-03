@@ -1059,16 +1059,88 @@ function renderTransferPaymentModal(p) {
     </div>
   </div>`);
 
-  const canvas = document.getElementById(qrId);
-  if (canvas && window.QRCode) {
-    QRCode.toCanvas(canvas, p.qrCode, {
-      width: 280,
-      margin: 1,
-      errorCorrectionLevel: 'M'
-    }, (err) => {
-      if (err) console.error('QR render error:', err);
-    });
+  renderPayOSQr(p.qrCode, p.checkoutUrl);
+}
+
+async function ensureQrCodeLibrary() {
+  if (window.QRCode) return true;
+  const sources = [
+    'https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js',
+    'https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js'
+  ];
+  for (const src of sources) {
+    try {
+      await new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[data-mindset-qrcode="${src}"]`);
+        if (existing) {
+          existing.addEventListener('load', resolve, {once:true});
+          existing.addEventListener('error', reject, {once:true});
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.dataset.mindsetQrcode = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+      if (window.QRCode) return true;
+    } catch (_) {}
   }
+  return false;
+}
+
+async function renderPayOSQr(qrValue, checkoutUrl='') {
+  const wrap = document.querySelector('.payos-qr-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="payos-qr-loading">Đang tạo mã QR...</div>';
+  const value = String(qrValue || '').trim();
+  if (!value) {
+    wrap.innerHTML = '<div class="payos-qr-error">Không nhận được mã QR từ payOS.</div>';
+    return;
+  }
+
+  // payOS trả về chuỗi dữ liệu QR; tạo ảnh bằng thư viện QRCode để kích thước
+  // và vị trí luôn ổn định, không phụ thuộc CSS của canvas.
+  const ready = await ensureQrCodeLibrary();
+  if (ready) {
+    try {
+      const dataUrl = await QRCode.toDataURL(value, {
+        width: 280,
+        margin: 1,
+        errorCorrectionLevel: 'M',
+      });
+      const img = new Image();
+      img.className = 'payos-qr-image';
+      img.width = 280;
+      img.height = 280;
+      img.alt = 'Mã QR thanh toán payOS';
+      img.src = dataUrl;
+      wrap.innerHTML = '';
+      wrap.appendChild(img);
+      return;
+    } catch (e) {
+      console.error('QR render error:', e);
+    }
+  }
+
+  // Fallback cuối: tạo QR cho checkoutUrl để khách vẫn có thể mở trang payOS.
+  if (checkoutUrl) {
+    const img = new Image();
+    img.className = 'payos-qr-image';
+    img.width = 280;
+    img.height = 280;
+    img.alt = 'Mở trang thanh toán payOS';
+    img.referrerPolicy = 'no-referrer';
+    img.src = `https://quickchart.io/qr?text=${encodeURIComponent(checkoutUrl)}&size=280&margin=1`;
+    img.onload = () => { wrap.innerHTML = ''; wrap.appendChild(img); };
+    img.onerror = () => {
+      wrap.innerHTML = '<div class="payos-qr-error">Không thể hiển thị QR. Hãy bấm “Mở trang thanh toán”.</div>';
+    };
+    return;
+  }
+  wrap.innerHTML = '<div class="payos-qr-error">Không thể hiển thị mã QR.</div>';
 }
 
 function beginTransferPaymentPolling(orderId) {
