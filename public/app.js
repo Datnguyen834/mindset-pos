@@ -893,16 +893,20 @@ function cashReceived() {
   return CASH_DENOMINATIONS.reduce((sum, value) => sum + value * Number(cashPaymentState.counts[value] || 0), 0);
 }
 
-function changeCashDenomination(value, delta) {
+function changeCashDenomination(value, delta = 1) {
   const info = cartDiscountInfo();
   const received = cashReceived();
 
-  // Đủ hoặc dư tiền rồi thì không cho cộng thêm mệnh giá.
-  // Vẫn cho phép "-" để nhân viên sửa lại nếu chọn nhầm.
-  if (delta > 0 && received >= info.total) return;
+  // Khi đã đủ hoặc dư bill thì khóa toàn bộ thao tác cộng thêm.
+  if (received >= info.total) return;
 
   const current = Number(cashPaymentState.counts[value] || 0);
-  cashPaymentState.counts[value] = Math.max(0, current + delta);
+  cashPaymentState.counts[value] = Math.max(0, current + Math.max(0, delta));
+  renderCashPaymentModal();
+}
+
+function clearCashDenominations() {
+  cashPaymentState = { counts: {} };
   renderCashPaymentModal();
 }
 
@@ -914,9 +918,9 @@ function renderCashPaymentModal() {
   const rows = CASH_DENOMINATIONS.map(value => {
     const count = Number(cashPaymentState.counts[value] || 0);
     const locked = received >= info.total;
-    return `<button type="button" class="cash-denom ${locked ? 'cash-denom-locked' : ''}" onclick="changeCashDenomination(${value},1)" aria-disabled="${locked}">
+    return `<button type="button" class="cash-denom ${locked ? 'cash-denom-locked' : ''}" onclick="changeCashDenomination(${value},1)" aria-disabled="${locked}" ${locked ? 'disabled' : ''}>
       <span class="cash-denom-value">${money(value)}</span>
-      <span class="cash-denom-controls"><span class="cash-minus" onclick="event.stopPropagation();changeCashDenomination(${value},-1)">−</span><b>${count}</b><span class="cash-plus ${locked ? 'cash-plus-disabled' : ''}">+</span></span>
+      <span class="cash-denom-controls"><b>${count}</b><span class="cash-plus ${locked ? 'cash-plus-disabled' : ''}">+</span></span>
     </button>`;
   }).join('');
 
@@ -931,7 +935,7 @@ function renderCashPaymentModal() {
       <div><span>Tiền khách đưa</span><b id="cashReceivedDisplay">${money(received)}</b></div>
       <div>${status}</div>
     </div>
-    <div class="cash-denom-title">Chọn mệnh giá khách đưa</div>
+    <div class="cash-denom-heading"><div class="cash-denom-title">Chọn mệnh giá khách đưa</div><button type="button" class="btn cash-clear-btn" onclick="clearCashDenominations()">Xóa đã chọn</button></div>
     <div class="cash-denom-grid">${rows}</div>
     <div class="cash-payment-footer">
       <button class="btn" onclick="closeModal()">Hủy</button>
