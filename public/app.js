@@ -747,6 +747,20 @@ function drawMenu() {
     (state.category === 'Tất cả' || m.category === state.category) &&
     m.name.toLowerCase().includes(search)
   );
+
+  // Khi xem Tất cả, gom các món cùng danh mục lại gần nhau theo đúng
+  // thứ tự danh mục trong phần Cài đặt, thay vì để thứ tự dữ liệu ngẫu nhiên.
+  if (state.category === 'Tất cả') {
+    const categoryOrder = new Map((state.categories || []).map((c, i) => [
+      typeof c === 'string' ? c : c.name, i
+    ]));
+    arr.sort((a, b) => {
+      const ca = categoryOrder.has(a.category) ? categoryOrder.get(a.category) : 9999;
+      const cb = categoryOrder.has(b.category) ? categoryOrder.get(b.category) : 9999;
+      if (ca !== cb) return ca - cb;
+      return (a.id || 0) - (b.id || 0);
+    });
+  }
   $('#menuGrid').innerHTML = arr.map(m => `
     <article class="menu-card" onclick="openProduct(${m.id}, this)">
       <img src="${m.image || '/assets/logo.png'}" alt="${esc(m.name)}">
