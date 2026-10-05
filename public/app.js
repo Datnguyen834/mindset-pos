@@ -7,6 +7,7 @@ let state = {
   categories: [],
   toppings: [],
   cart: [],
+  cartExpanded: new Set(),
   category: 'Tất cả',
   payosConfig: {configured:false,source:null,clientId:'',apiKeyMasked:'',checksumKeyMasked:''},
   discountRules: [],
@@ -481,15 +482,52 @@ async function runConfirmDelete() {
   }
 }
 
-async function api(url, opt = {}) {
+let refreshingAuth = null;
+
+async function refreshAuthToken() {
+  if (refreshingAuth) return refreshingAuth;
+  const savedToken = localStorage.getItem('mindset_auth_token');
+  if (!savedToken) return null;
+
+  refreshingAuth = (async () => {
+    const r = await fetch('/api/auth/refresh', {
+      method:'POST',
+      credentials:'same-origin',
+      headers:{Authorization:`Bearer ${savedToken}`}
+    });
+    let d = {};
+    try { d = await r.json(); } catch {}
+    if (!r.ok || !d.token) throw new Error(d.message || 'Phiên đăng nhập không hợp lệ');
+    localStorage.setItem('mindset_auth_token', d.token);
+    if (d.user) {
+      localStorage.setItem('mindset_auth_user', JSON.stringify(d.user));
+      state.user = d.user;
+    }
+    return d.token;
+  })().finally(() => { refreshingAuth = null; });
+
+  return refreshingAuth;
+}
+
+async function api(url, opt = {}, retryAuth = true) {
   const options = { credentials: 'same-origin', ...opt };
   const savedToken = localStorage.getItem('mindset_auth_token');
   if (savedToken) {
     options.headers = { ...(options.headers || {}), Authorization: `Bearer ${savedToken}` };
   }
-  const r = await fetch(url, options);
+  let r = await fetch(url, options);
   let d = {};
   try { d = await r.json(); } catch {}
+
+  // Nếu JWT vừa hết hạn, tự gia hạn rồi gọi lại request cũ. Nhờ vậy F5
+  // không đẩy người dùng về màn hình đăng nhập chỉ vì phiên cũ hết hạn.
+  if (r.status === 401 && retryAuth && url !== '/api/auth/login' && url !== '/api/auth/refresh' && localStorage.getItem('mindset_auth_token')) {
+    try {
+      await refreshAuthToken();
+      return api(url, opt, false);
+    } catch {}
+  }
+
   if (!r.ok) throw new Error(d.message || 'Có lỗi xảy ra');
   return d;
 }
@@ -559,16 +597,40 @@ function go(p) {
 }
 
 async function boot({ animate = false } = {}) {
+  const savedToken = localStorage.getItem('mindset_auth_token');
+  const savedUser = localStorage.getItem('mindset_auth_user');
+
   try {
+    // Luôn ưu tiên xác thực lại bằng token đã lưu. Cookie chỉ là lớp dự phòng.
     const me = await api('/api/auth/me');
     state.user = me.user;
-
-    // Đã xác thực thành công: lưu thông tin phiên ở phía trình duyệt để F5
-    // vẫn khôi phục được POS ngay cả khi cookie bị trình duyệt/hosting bỏ qua.
     localStorage.setItem('mindset_auth_user', JSON.stringify(me.user));
+  } catch (e) {
+    // Nếu chưa có token thì chắc chắn đang ở màn hình login. Nếu có token mà
+    // server vừa restart/F5, thử gia hạn thêm một lần trước khi kết luận hết phiên.
+    if (savedToken) {
+      try {
+        await refreshAuthToken();
+        const me = await api('/api/auth/me', {}, false);
+        state.user = me.user;
+        localStorage.setItem('mindset_auth_user', JSON.stringify(me.user));
+      } catch {}
+    } else if (savedUser) {
+      // Không dùng dữ liệu localStorage để bỏ qua xác thực; chỉ giữ login screen.
+      // Điều này tránh trường hợp token bị xóa nhưng giao diện vẫn tưởng đã đăng nhập.
+    }
+  }
 
-    // Chuẩn bị toàn bộ dữ liệu trước khi mở POS để không thấy màn hình trắng.
-    await loadBase();
+  if (!state.user) return;
+
+  try {
+    // Retry dữ liệu POS một lần để Render có thời gian khởi động DB sau deploy/restart.
+    try {
+      await loadBase();
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 700));
+      await loadBase();
+    }
 
     const loginView = $('#loginView');
     const appView = $('#appView');
@@ -577,7 +639,7 @@ async function boot({ animate = false } = {}) {
     initInteractiveCat();
     setCatVisibility();
     appView.classList.remove('app-enter');
-    void appView.offsetWidth; // restart animation nếu đăng nhập lại
+    void appView.offsetWidth;
     if (animate) appView.classList.add('app-enter');
 
     $('#userName').textContent = state.user.fullName || state.user.username || '-';
@@ -595,7 +657,11 @@ async function boot({ animate = false } = {}) {
     } else {
       loginView.classList.add('hidden');
     }
-  } catch {}
+  } catch (e) {
+    // Không tự xóa token chỉ vì một request dữ liệu POS lỗi. Người dùng vẫn
+    // được giữ phiên đăng nhập và có thể tiếp tục sau khi server ổn định.
+    console.error('Không tải được dữ liệu POS:', e);
+  }
 }
 
 async function loadBase() {
@@ -708,7 +774,7 @@ function productOptionsHtml(itemIndex = 'new', existing = {}) {
     <div class="topping-list">
       ${state.toppings.map(t => {
         const q = (existing.toppings || []).find(z => z.id === t.id)?.quantity || 0;
-        return `<div class="topping">
+        return `<div class="topping topping-clickable" data-top-index="${esc(String(itemIndex))}" data-top-id="${Number(t.id)}" role="button" tabindex="0" title="Bấm để thêm 1 ${esc(t.name)}">
           <div><strong>${esc(t.name)}</strong><br><small>${money(t.price)}</small></div>
           <div class="qty"><button type="button" class="top-adjust-btn" data-top-index="${esc(String(itemIndex))}" data-top-id="${Number(t.id)}" data-top-delta="-1">−</button><b id="top-q-${String(itemIndex)}-${t.id}">${q}</b><button type="button" class="top-adjust-btn" data-top-index="${esc(String(itemIndex))}" data-top-id="${Number(t.id)}" data-top-delta="1">+</button></div>
         </div>`;
@@ -827,9 +893,20 @@ function openProduct(id, sourceEl = null) {
   const temp = { toppings: [], sugarPercent: 100, icePercent: 100 };
   window.__productDraft = temp;
   openModal(`
-    <div class="product-modal-head"><img src="${m.image || '/assets/logo.png'}"><div><div class="eyebrow">${esc(m.category)}</div><h3>${esc(m.name)}</h3><strong class="modal-price" id="modalProductPrice" data-base-price="${Number(m.price)}">${money(m.price)}</strong></div></div>
-    ${productOptionsHtml('new', temp)}
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="addConfiguredProduct(${m.id})">Thêm vào đơn</button></div>`);
+    <div class="product-config-layout">
+      <div class="product-config-image">
+        <img src="${m.image || '/assets/logo.png'}" alt="${esc(m.name)}">
+        <div class="product-config-caption">
+          <div class="eyebrow">${esc(m.category)}</div>
+          <h3>${esc(m.name)}</h3>
+          <strong class="modal-price" id="modalProductPrice" data-base-price="${Number(m.price)}">${money(m.price)}</strong>
+        </div>
+      </div>
+      <div class="product-config-options">
+        ${productOptionsHtml('new', temp)}
+        <div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="addConfiguredProduct(${m.id})">Thêm vào đơn</button></div>
+      </div>
+    </div>`);
 }
 
 async function addConfiguredProduct(id) {
@@ -903,35 +980,63 @@ function checkoutDiscountInfo(subtotal = cartSubtotal()) {
 }
 
 function toppingText(x) {
-  const tops = x.toppings.length ? x.toppings.map(t => `${esc(t.name)}${t.quantity > 1 ? ` x${t.quantity}` : ''}`).join(', ') : 'Không topping';
-  return `${tops} · Đường ${x.sugarPercent}% · Đá ${x.icePercent}%`;
+  const tops = (x.toppings || []).filter(t => Number(t.quantity || 0) > 0);
+  const lines = tops.map(t => `${esc(t.name)}${Number(t.quantity) > 1 ? ` x${Number(t.quantity)}` : ''}`);
+  // Chỉ hiện topping/tuỳ chỉnh khi khách thực sự chọn. Mặc định giỏ hàng chỉ hiện tên món + giá.
+  if (lines.length) return lines;
+  return [];
+}
+
+function toggleCartItem(i) {
+  if (state.cartExpanded.has(i)) state.cartExpanded.delete(i);
+  else state.cartExpanded.add(i);
+  drawCart();
 }
 
 function drawCart() {
   const el = $('#cartItems');
   if (!el) return;
   if (!state.cart.length) {
+    state.cartExpanded.clear();
     el.innerHTML = '<div class="empty">Chưa có món<br>Chạm vào món để thêm vào đơn</div>';
   } else {
+    // Keep expanded indexes valid after deleting items.
+    state.cartExpanded = new Set([...state.cartExpanded].filter(i => i >= 0 && i < state.cart.length));
     el.innerHTML = state.cart.map((x, i) => {
       const bakery = isBakeryProduct(x);
-      const customText = bakery ? 'Bánh ngọt · Không topping' : toppingText(x);
+      const expanded = state.cartExpanded.has(i);
+      const selectedToppings = bakery ? [] : toppingText(x);
+      const sugarChanged = !bakery && Number(x.sugarPercent ?? 100) !== 100;
+      const iceChanged = !bakery && Number(x.icePercent ?? 100) !== 100;
       const customizeButton = bakery
         ? ''
-        : `<button class="btn small" onclick="editCartItem(${i})">Tùy chỉnh</button>`;
+        : `<button class="btn small" onclick="event.stopPropagation(); editCartItem(${i})">Tùy chỉnh</button>`;
+
+      const toppingLines = selectedToppings.map((name, topIndex) => {
+        const raw = (x.toppings || []).filter(t => Number(t.quantity || 0) > 0)[topIndex];
+        return `<div class="cart-topping-line"><span>${name}</span><button type="button" class="cart-topping-remove" title="Xóa ${esc(raw?.name || '')}" onclick="event.stopPropagation(); removeCartTopping(${i}, ${Number(raw?.id ?? -1)})">×</button></div>`;
+      }).join('');
+      const optionLine = (sugarChanged || iceChanged)
+        ? `<div class="cart-options-line">${sugarChanged ? `Đường ${Number(x.sugarPercent)}%` : ''}${sugarChanged && iceChanged ? ' · ' : ''}${iceChanged ? `Đá ${Number(x.icePercent)}%` : ''}</div>`
+        : '';
+      const details = (toppingLines || optionLine)
+        ? `<div class="cart-custom">${toppingLines}${optionLine}</div>`
+        : '<div class="cart-custom cart-custom-empty">Chưa có topping hoặc tuỳ chọn</div>';
 
       return `
-      <div class="cart-row${bakery ? ' bakery-cart-row' : ''}">
+      <div class="cart-row${bakery ? ' bakery-cart-row' : ''}${expanded ? ' expanded' : ''}" onclick="toggleCartItem(${i})" role="button" tabindex="0" aria-expanded="${expanded}">
         <img src="${x.image || '/assets/logo.png'}" alt="">
         <div class="cart-main">
-          <strong>${esc(x.name)}</strong>
-          <div class="cart-custom"><small>${customText}</small></div>
+          <div class="cart-product-head">
+            <strong>${esc(x.name)}</strong>
+          </div>
+          ${expanded ? details : ''}
           <div class="qty">
-            <button onclick="changeQty(${i},-1)">−</button><span>${x.quantity}</span><button onclick="changeQty(${i},1)">+</button>
+            <button onclick="event.stopPropagation(); changeQty(${i},-1)">−</button><span>${x.quantity}</span><button onclick="event.stopPropagation(); changeQty(${i},1)">+</button>
             ${customizeButton}
           </div>
         </div>
-        <div class="cart-price"><b>${money((x.price + x.toppings.reduce((a,t)=>a+t.price*t.quantity,0))*x.quantity)}</b><button class="remove-btn" onclick="removeCart(${i})">×</button></div>
+        <div class="cart-price"><b>${money((x.price + x.toppings.reduce((a,t)=>a+t.price*t.quantity,0))*x.quantity)}</b><button class="remove-btn" onclick="event.stopPropagation(); removeCart(${i})">×</button></div>
       </div>`;
     }).join('');
   }
@@ -983,8 +1088,15 @@ function drawCart() {
 }
 
 function changeQty(i, d) { state.cart[i].quantity = Math.max(1, state.cart[i].quantity + d); drawCart(); }
-function removeCart(i) { state.cart.splice(i, 1); drawCart(); }
-function clearCart() { state.cart = []; state.checkoutCustomer = { customer: null, redeem: false, coupon: null }; state.pendingCustomerSelection = null; drawCart(); }
+function removeCartTopping(itemIndex, toppingId) {
+  const item = state.cart[itemIndex];
+  if (!item || !Array.isArray(item.toppings)) return;
+  item.toppings = item.toppings.filter(t => Number(t.id) !== Number(toppingId));
+  drawCart();
+}
+
+function removeCart(i) { state.cart.splice(i, 1); state.cartExpanded = new Set([...state.cartExpanded].filter(x => x !== i).map(x => x > i ? x - 1 : x)); drawCart(); }
+function clearCart() { state.cart = []; state.cartExpanded.clear(); state.checkoutCustomer = { customer: null, redeem: false, coupon: null }; state.pendingCustomerSelection = null; drawCart(); }
 
 function editCartItem(i) {
   const x = state.cart[i];
@@ -993,9 +1105,20 @@ function editCartItem(i) {
   window.__editIndex = i;
   window.__productDraft = { sugarPercent: x.sugarPercent, icePercent: x.icePercent, toppings: x.toppings.map(t => ({...t})) };
   openModal(`
-    <div class="product-modal-head"><img src="${x.image || '/assets/logo.png'}"><div><div class="eyebrow">Tùy chỉnh món</div><h3>${esc(x.name)}</h3><strong class="modal-price" id="modalProductPrice" data-base-price="${Number(x.price)}">${money(x.price + (x.toppings || []).reduce((a,t)=>a+Number(t.price||0)*Number(t.quantity||0),0))}</strong></div></div>
-    ${productOptionsHtml(i, window.__productDraft)}
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="saveCartItem(${i})">Lưu thay đổi</button></div>`);
+    <div class="product-config-layout">
+      <div class="product-config-image">
+        <img src="${x.image || '/assets/logo.png'}" alt="${esc(x.name)}">
+        <div class="product-config-caption">
+          <div class="eyebrow">Tùy chỉnh món</div>
+          <h3>${esc(x.name)}</h3>
+          <strong class="modal-price" id="modalProductPrice" data-base-price="${Number(x.price)}">${money(x.price + (x.toppings || []).reduce((a,t)=>a+Number(t.price||0)*Number(t.quantity||0),0))}</strong>
+        </div>
+      </div>
+      <div class="product-config-options">
+        ${productOptionsHtml(i, window.__productDraft)}
+        <div class="modal-actions"><button class="btn" onclick="closeModal()">Hủy</button><button class="btn primary" onclick="saveCartItem(${i})">Lưu thay đổi</button></div>
+      </div>
+    </div>`);
 }
 
 function adjustTopModal(index, id, d) {
@@ -2105,9 +2228,26 @@ function openModal(html) {
   // và khi bấm "Tùy chỉnh" một món đã có trong đơn.
   box.onclick = (e) => {
     const btn = e.target.closest('.top-adjust-btn');
-    if (!btn || !box.contains(btn)) return;
+    if (btn && box.contains(btn)) {
+      e.preventDefault();
+      e.stopPropagation();
+      adjustTopModal(btn.dataset.topIndex, Number(btn.dataset.topId), Number(btn.dataset.topDelta));
+      return;
+    }
+
+    // Bấm bất kỳ vị trí nào trong khung topping (trừ nút +/-) sẽ cộng 1 topping.
+    const row = e.target.closest('.topping-clickable');
+    if (row && box.contains(row)) {
+      e.preventDefault();
+      adjustTopModal(row.dataset.topIndex, Number(row.dataset.topId), 1);
+    }
+  };
+  box.onkeydown = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.topping-clickable');
+    if (!row || !box.contains(row)) return;
     e.preventDefault();
-    adjustTopModal(btn.dataset.topIndex, Number(btn.dataset.topId), Number(btn.dataset.topDelta));
+    adjustTopModal(row.dataset.topIndex, Number(row.dataset.topId), 1);
   };
   $('#modal').classList.remove('hidden');
 }
