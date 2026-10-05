@@ -751,12 +751,29 @@ function drawMenu() {
   // Khi xem Tất cả, gom các món cùng danh mục lại gần nhau theo đúng
   // thứ tự danh mục trong phần Cài đặt, thay vì để thứ tự dữ liệu ngẫu nhiên.
   if (state.category === 'Tất cả') {
-    const categoryOrder = new Map((state.categories || []).map((c, i) => [
-      typeof c === 'string' ? c : c.name, i
-    ]));
+    // Trong mục Tất cả, nhóm món theo danh mục để các món cùng loại
+    // luôn nằm liền nhau. Bánh ngọt luôn được đẩy xuống nhóm cuối cùng.
+    const preferredOrder = [
+      'Cà phê',
+      'Trà sữa',
+      'Trà',
+      'Sinh tố',
+      'Nước ép',
+      'Đá xay',
+      'Bánh ngọt'
+    ];
+    const categoryOrder = new Map(preferredOrder.map((name, i) => [name, i]));
+    (state.categories || []).forEach((c, i) => {
+      const name = typeof c === 'string' ? c : c.name;
+      if (!categoryOrder.has(name) && name !== 'Bánh ngọt') {
+        categoryOrder.set(name, preferredOrder.length + i);
+      }
+    });
+    categoryOrder.set('Bánh ngọt', preferredOrder.length + 999);
+
     arr.sort((a, b) => {
-      const ca = categoryOrder.has(a.category) ? categoryOrder.get(a.category) : 9999;
-      const cb = categoryOrder.has(b.category) ? categoryOrder.get(b.category) : 9999;
+      const ca = categoryOrder.has(a.category) ? categoryOrder.get(a.category) : 9998;
+      const cb = categoryOrder.has(b.category) ? categoryOrder.get(b.category) : 9998;
       if (ca !== cb) return ca - cb;
       return (a.id || 0) - (b.id || 0);
     });
