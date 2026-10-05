@@ -691,6 +691,13 @@ body.modal-open { overflow: hidden; }
   color:#111827;
   font-size:10px;
 }
+/* Keep the credit pinned to the actual browser viewport, not the login card. */
+.login-card > .login-credit{
+  position:fixed;
+  right:18px;
+  bottom:10px;
+  z-index:99999;
+}
 
 .login-card::after{
   content:"";
