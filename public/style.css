@@ -1706,3 +1706,11 @@ body.modal-open { overflow: hidden; }
     font-size:9px!important;
   }
 }
+
+/* ===== MOBILE VISIBILITY FIX =====
+   The mobile layout rules use !important, so explicitly preserve the
+   shared .hidden state for login/app screens. */
+@media (max-width:700px){
+  #loginView.login-page.hidden{display:none!important}
+  #appView.app.hidden{display:none!important}
+}
