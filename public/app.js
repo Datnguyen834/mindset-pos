@@ -1896,33 +1896,28 @@ async function renderSettings() {
             <button type="button" class="settings-accordion-head" onclick="toggleSettingsSection('menuSettings')">
               <span>
                 <strong>Menu món</strong>
-                <small>${menu.length} món · Bấm để xem và chỉnh sửa</small>
+                <small>${menu.length} món · Chọn danh mục để xem và chỉnh sửa</small>
               </span>
               <span class="settings-chevron ${state.settingsOpen.menuSettings ? 'open' : ''}" id="menuSettingsChevron">⌄</span>
             </button>
             <div class="settings-accordion-body ${state.settingsOpen.menuSettings ? '' : 'hidden'}" id="menuSettings">
-              <div class="settings-section-toolbar">
-                <span class="muted">Danh sách món</span>
-                <button class="btn primary" onclick="menuForm()">+ Thêm món</button>
+              <div class="settings-menu-category-bar">
+                <label class="settings-category-picker">
+                  <span>Danh mục món</span>
+                  <select id="settingsMenuCategory" onchange="changeSettingsMenuCategory(this.value)">
+                    <option value="__all__">Tất cả danh mục</option>
+                    ${categories.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('')}
+                  </select>
+                </label>
+                <button class="btn primary" onclick="menuForm({category: getSettingsMenuCategory()})">+ Thêm món</button>
               </div>
+              <div class="settings-menu-category-title" id="settingsMenuCategoryTitle"></div>
               <div class="table-card">
                 <table class="data-table">
                   <thead>
-                    <tr><th>Món</th><th>Danh mục</th><th>Giá</th><th>Thao tác</th></tr>
+                    <tr><th>Món</th><th>Giá</th><th>Thao tác</th></tr>
                   </thead>
-                  <tbody>
-                    ${menu.map(m => `
-                      <tr>
-                        <td><img class="avatar" src="${m.image || '/assets/logo.png'}">${esc(m.name)}</td>
-                        <td>${esc(m.category)}</td>
-                        <td>${money(m.price)}</td>
-                        <td>
-                          <button class="btn small" onclick='menuForm(${JSON.stringify(m)})'>Sửa</button>
-                          <button class="btn small danger" onclick="deleteMenu(${m.id})">Xóa</button>
-                        </td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
+                  <tbody id="settingsMenuRows"></tbody>
                 </table>
               </div>
             </div>
@@ -2006,8 +2001,39 @@ async function renderSettings() {
       </div>
     </div>`;
 
+  renderSettingsMenuByCategory();
+
   const payosForm = $('#payosForm');
   if (payosForm) payosForm.onsubmit = savePayOSChannel;
+}
+
+function getSettingsMenuCategory() {
+  return state.settingsMenuCategory || (state.categories?.[0]?.name || '__all__');
+}
+
+function changeSettingsMenuCategory(category) {
+  state.settingsMenuCategory = category || '__all__';
+  renderSettingsMenuByCategory();
+}
+
+function renderSettingsMenuByCategory() {
+  const select = $('#settingsMenuCategory');
+  const rows = $('#settingsMenuRows');
+  const title = $('#settingsMenuCategoryTitle');
+  if (!rows) return;
+  const selected = getSettingsMenuCategory();
+  if (select) select.value = selected;
+  const filtered = selected === '__all__' ? (state.menu || []) : (state.menu || []).filter(m => m.category === selected);
+  if (title) title.textContent = selected === '__all__' ? `Tất cả món · ${filtered.length} món` : `${selected} · ${filtered.length} món`;
+  rows.innerHTML = filtered.length ? filtered.map(m => `
+    <tr>
+      <td><img class="avatar" src="${m.image || '/assets/logo.png'}">${esc(m.name)}</td>
+      <td>${money(m.price)}</td>
+      <td>
+        <button class="btn small" onclick='menuForm(${JSON.stringify(m)})'>Sửa</button>
+        <button class="btn small danger" onclick="deleteMenu(${m.id})">Xóa</button>
+      </td>
+    </tr>`).join('') : `<tr><td colspan="3"><div class="empty">Chưa có món trong danh mục này</div></td></tr>`;
 }
 
 function toggleSettingsSection(sectionId) {
@@ -2095,7 +2121,7 @@ async function saveMenu(e, id) {
   const fd = new FormData();
   fd.append('name', $('#mName').value); fd.append('category', $('#mCat').value); fd.append('price', String(moneyInputValue('mPrice')));
   if ($('#mImage').files[0]) fd.append('image', $('#mImage').files[0]);
-  try { await api(id ? `/api/admin/menu/${id}` : '/api/admin/menu', {method:id ? 'PUT' : 'POST', body:fd}); closeModal(); await loadBase(); state.settingsOpen.menuSettings = true; toast('Đã lưu món'); renderSettings(); }
+  try { const selectedCategory = $('#mCat')?.value || getSettingsMenuCategory(); await api(id ? `/api/admin/menu/${id}` : '/api/admin/menu', {method:id ? 'PUT' : 'POST', body:fd}); state.settingsMenuCategory = selectedCategory; closeModal(); await loadBase(); state.settingsOpen.menuSettings = true; toast('Đã lưu món'); renderSettings(); }
   catch (e) { toast(e.message, true); }
 }
 
@@ -2109,6 +2135,7 @@ async function deleteMenu(id) {
       await api('/api/admin/menu/' + id, {method:'DELETE'});
       await loadBase();
       state.settingsOpen.menuSettings = true;
+      if (m?.category) state.settingsMenuCategory = m.category;
       await renderSettings();
       toast('Đã xóa sản phẩm');
     }

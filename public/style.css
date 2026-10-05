@@ -1322,3 +1322,11 @@ body.modal-open { overflow: hidden; }
 .cart-row .qty .btn {
   cursor: pointer;
 }
+
+/* Settings menu: chọn danh mục trước để danh sách món không bị kéo dài. */
+.settings-menu-category-bar{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:12px}
+.settings-category-picker{display:flex;flex-direction:column;gap:6px;min-width:280px;margin:0}
+.settings-category-picker span{font-size:12px;font-weight:800;color:var(--muted)}
+.settings-category-picker select{min-height:42px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font:inherit;font-weight:700}
+.settings-menu-category-title{font-size:13px;font-weight:900;margin:6px 0 10px;color:var(--green)}
+@media(max-width:700px){.settings-menu-category-bar{align-items:stretch;flex-direction:column}.settings-category-picker{min-width:0}}
