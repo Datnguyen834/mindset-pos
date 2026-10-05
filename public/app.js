@@ -1403,12 +1403,11 @@ function renderCustomerFoundModal(customer = null, isSearchPreview = false) {
   const usableQty = Math.min(couponRemaining, drinkQty);
   let couponHtml = '';
   if (tier.name !== 'Chưa có hạng') {
-    if (coupon?.redeemedAt || couponRemaining <= 0) {
-      couponHtml = `<div class="member-coupon-card used"><div class="member-coupon-head"><span>🎁 Quà thành viên</span><b>Hạng ${esc(tier.name)}</b></div><div class="member-coupon-reward"><strong>${esc(coupon?.rewardName || tier.reward)}</strong><span>Coupon đã sử dụng hết trong năm nay</span></div><div class="member-coupon-used">✓ Đã sử dụng</div></div>`;
-    } else if (couponIsDrink) {
+    // Chỉ hiển thị coupon còn lượt sử dụng. Coupon đã dùng hết thì ẩn hoàn toàn.
+    if (coupon && couponRemaining > 0 && couponIsDrink) {
       const status = appliedQty ? `Đã áp dụng ${appliedQty} ly vào hóa đơn` : (drinkQty ? `Có ${usableQty} ly được miễn trên hóa đơn này` : 'Chưa có đồ uống trong hóa đơn');
       couponHtml = `<div class="member-coupon-card available"><div class="member-coupon-head"><span>🎁 Coupon nước</span><b>Hạng ${esc(tier.name)}</b></div><div class="member-coupon-reward"><strong>${esc(coupon.rewardName)}</strong><span>Còn ${couponRemaining} ly free. ${status}.</span></div>${appliedQty ? '<div class="member-coupon-used">✓ Đã áp dụng vào hóa đơn</div>' : `<button type="button" class="btn primary member-coupon-use ${canUseDrinkCoupon ? '' : 'disabled'}" ${canUseDrinkCoupon ? `onclick="applyMemberCouponToCart()"` : 'disabled'}>${drinkQty ? `Sử dụng coupon (${usableQty} ly)` : 'Chưa có món để sử dụng'}</button>`}</div>`;
-    } else {
+    } else if (coupon && couponRemaining > 0) {
       couponHtml = `<div class="member-coupon-card available"><div class="member-coupon-head"><span>🎁 Quà thành viên</span><b>Hạng ${esc(tier.name)}</b></div><div class="member-coupon-reward"><strong>${esc(coupon.rewardName || tier.reward)}</strong><span>Quà hiện vật — nhân viên xác nhận khi khách nhận quà.</span></div><button type="button" class="btn primary member-coupon-use" onclick="usePhysicalMemberCoupon(${c.id})">Xác nhận nhận quà</button></div>`;
     }
   } else {
