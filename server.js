@@ -126,6 +126,86 @@ async function initDb() {
   if (topCount.rows[0].n === 0) {
     await q(`INSERT INTO toppings(name,price) VALUES ('Trân châu',5000),('Thạch',5000),('Kem cheese',8000),('Shot espresso',10000),('Sữa tươi',5000)`);
   }
+  // Full menu from MENU QUÁN.docx: keep categories and prices in sync.
+  const fullMenu = [
+    // Cà phê
+    ['Cà phê đen','Cà phê',25000],
+    ['Cà phê sữa','Cà phê',28000],
+    ['Bạc xỉu','Cà phê',32000],
+    ['Cà phê sữa tươi','Cà phê',32000],
+    ['Cà phê muối','Cà phê',35000],
+    ['Cà phê cốt dừa','Cà phê',38000],
+    ['Americano','Cà phê',30000],
+    ['Cappuccino','Cà phê',38000],
+    ['Latte','Cà phê',38000],
+    ['Mocha','Cà phê',40000],
+    // Trà sữa
+    ['Trà sữa truyền thống','Trà sữa',30000],
+    ['Trà sữa socola','Trà sữa',32000],
+    ['Trà sữa matcha','Trà sữa',35000],
+    ['Trà sữa khoai môn','Trà sữa',35000],
+    ['Trà sữa caramel','Trà sữa',35000],
+    ['Trà sữa dâu','Trà sữa',35000],
+    ['Trà sữa thái xanh','Trà sữa',32000],
+    ['Trà sữa thái đỏ','Trà sữa',32000],
+    ['Trà sữa kem cheese','Trà sữa',38000],
+    ['Trà sữa trân châu đường đen','Trà sữa',38000],
+    // Trà
+    ['Trà đào cam sả','Trà',35000],
+    ['Trà vải','Trà',32000],
+    ['Trà dâu','Trà',32000],
+    ['Trà tắc mật ong','Trà',28000],
+    ['Trà chanh','Trà',25000],
+    ['Trà tắc xí muội','Trà',30000],
+    ['Trà nhiệt đới','Trà',35000],
+    ['Trà ô long đào','Trà',35000],
+    // Sinh tố
+    ['Sinh tố bơ','Sinh tố',38000],
+    ['Sinh tố xoài','Sinh tố',35000],
+    ['Sinh tố dâu','Sinh tố',38000],
+    ['Sinh tố mãng cầu','Sinh tố',38000],
+    ['Sinh tố chuối','Sinh tố',32000],
+    ['Sinh tố việt quất','Sinh tố',40000],
+    ['Sinh tố mix trái cây','Sinh tố',42000],
+    // Nước ép
+    ['Nước ép cam','Nước ép',35000],
+    ['Nước ép dưa hấu','Nước ép',30000],
+    ['Nước ép dứa','Nước ép',32000],
+    ['Nước ép táo','Nước ép',38000],
+    ['Nước ép cà rốt','Nước ép',30000],
+    ['Nước ép ổi','Nước ép',32000],
+    ['Nước ép chanh dây','Nước ép',32000],
+    ['Nước ép mix','Nước ép',40000],
+    // Đá xay
+    ['Đá xay chocolate','Đá xay',40000],
+    ['Đá xay cookies','Đá xay',42000],
+    ['Đá xay matcha','Đá xay',42000],
+    ['Đá xay caramel','Đá xay',42000],
+    ['Đá xay dâu','Đá xay',40000],
+    ['Đá xay xoài','Đá xay',40000],
+    ['Đá xay cà phê','Đá xay',42000],
+    ['Đá xay oreo','Đá xay',42000],
+    // Bánh ngọt
+    ['Bánh tiramisu','Bánh ngọt',45000],
+    ['Bánh cheesecake','Bánh ngọt',45000],
+    ['Bánh red velvet','Bánh ngọt',45000],
+    ['Bánh chocolate','Bánh ngọt',40000],
+    ['Bánh matcha','Bánh ngọt',42000],
+    ['Bánh bông lan trứng muối','Bánh ngọt',38000],
+    ['Croissant','Bánh ngọt',30000],
+    ['Croissant chocolate','Bánh ngọt',35000],
+    ['Cookie chocolate chip','Bánh ngọt',25000],
+    ['Brownie','Bánh ngọt',30000],
+  ];
+  for (const [name, cat, price] of fullMenu) {
+    await q(`INSERT INTO categories(name) VALUES($1) ON CONFLICT(name) DO NOTHING`, [cat]);
+    const existing = await q(`SELECT id FROM menu_items WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) ORDER BY id LIMIT 1`, [name]);
+    if (existing.rowCount) {
+      await q(`UPDATE menu_items SET category=$1, price=$2, active=TRUE, updated_at=NOW() WHERE id=$3`, [cat, price, existing.rows[0].id]);
+    } else {
+      await q(`INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,NULL)`, [name, cat, price]);
+    }
+  }
   await q(`INSERT INTO settings(key,value) VALUES('discount_rules','[]') ON CONFLICT(key) DO NOTHING`);
 }
 
