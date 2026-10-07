@@ -29,12 +29,11 @@
   <section id="appView" class="app hidden">
     <main class="main">
       <header class="topbar">
-        <div class="top-info"><div><div class="welcome">Chức vụ: <b id="roleText">-</b></div><small id="clock"></small></div><div class="cat-track" id="catTrack" aria-label="Mèo Mindset, bấm để tương tác"><button class="moving-cat" id="movingCat" type="button" aria-label="Bấm vào mèo"><span class="cat-spark" aria-hidden="true">🐾</span></button></div></div>
+        <div class="top-info"><div><div class="welcome">Chức vụ: <b id="roleText">-</b></div><small id="clock"></small></div><div id="adminMenuWrap" class="admin-menu-wrap hidden"><button class="hamburger-btn" type="button" aria-label="Mở menu" title="Menu" onclick="toggleAdminMenu()"><span></span><span></span><span></span></button><div id="adminMenu" class="admin-menu hidden"><nav id="nav"></nav></div></div><div class="cat-track" id="catTrack" aria-label="Mèo Mindset, bấm để tương tác"><button class="moving-cat" id="movingCat" type="button" aria-label="Bấm vào mèo"><span class="cat-spark" aria-hidden="true">🐾</span></button></div></div>
         <div class="top-brand"><img src="/assets/logo.png" alt="Mindset"><div><b>Mindset</b><span>GOOD COFFEE • BETTER MINDSET</span></div></div>
         <div class="top-actions">
           <button class="cat-toggle" id="catToggle" type="button" aria-pressed="false" aria-label="Hiện mèo" title="Hiện mèo" onclick="toggleCatVisibility()"><span class="eye-icon eye-off" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 4.2A10.7 10.7 0 0 1 12 4c5.3 0 9.3 4.4 10.5 7.8a11.8 11.8 0 0 1-2.1 3.5"/><path d="M6.1 6.1C3.9 7.8 2.2 10.1 1.5 12 2.7 15.6 6.7 20 12 20c1.3 0 2.5-.2 3.6-.7"/></svg></span><span class="eye-icon eye-on" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2 12s3.7-7 10-7 10 7 10 7-3.7 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="2.7"/></svg></span></button>
           <span class="user-display" id="userName">-</span>
-          <div id="adminMenuWrap" class="admin-menu-wrap hidden"><button class="hamburger-btn" type="button" aria-label="Mở menu" title="Menu" onclick="toggleAdminMenu()"><span></span><span></span><span></span></button><div id="adminMenu" class="admin-menu hidden"><nav id="nav"></nav></div></div>
           <div class="power-wrap"><button class="power-btn" id="powerBtn" type="button" aria-label="Đăng xuất" title="Đăng xuất" onclick="logout()">⏻</button></div>
         </div>
       </header>

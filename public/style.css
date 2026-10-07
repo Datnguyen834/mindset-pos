@@ -1891,3 +1891,36 @@ body.modal-open { overflow: hidden; }
 .header-bar {
   position: relative;
 }
+
+
+/* ===== Header xanh + hamburger cạnh Chức vụ ===== */
+.topbar{
+  background:#173b31 !important;
+  border-bottom-color:#173b31 !important;
+  color:#fff !important;
+}
+.top-info{gap:14px;}
+.top-info .welcome,.top-info .welcome b,.top-info small{color:#fff !important;}
+.top-info small{opacity:.78;}
+.admin-menu-wrap{flex:0 0 auto;order:0;}
+.hamburger-btn{
+  width:42px;height:42px;
+  border-color:rgba(255,255,255,.28) !important;
+  background:rgba(255,255,255,.10) !important;
+  color:#fff !important;
+}
+.hamburger-btn:hover{background:rgba(255,255,255,.18) !important;border-color:rgba(255,255,255,.45) !important;}
+.admin-menu{right:auto;left:0;top:50px;}
+.top-brand b{color:#fff;}
+.top-brand span{color:rgba(255,255,255,.72);}
+.top-actions .user-display{color:#fff;}
+.top-actions .cat-toggle,.top-actions .power-btn{
+  background:rgba(255,255,255,.10) !important;
+  color:#fff !important;
+  border-color:rgba(255,255,255,.28) !important;
+}
+.top-actions .cat-toggle:hover,.top-actions .power-btn:hover{
+  background:rgba(255,255,255,.18) !important;
+  border-color:rgba(255,255,255,.45) !important;
+}
+@media(max-width:600px){.admin-menu{left:0;right:auto;width:225px;}}
