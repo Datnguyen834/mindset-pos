@@ -729,14 +729,10 @@ function renderPOS() {
                   <button type="button" class="payment-option ${state.orderType === 'takeaway' ? 'active' : ''}" id="orderTypeTakeaway" onclick="selectOrderType('takeaway')">🥡 Mang về</button>
                 </div>
                 ${state.orderType === 'dine_in' ? `
-                  <div class="table-picker">
-                    <div class="table-picker-title">Chọn thẻ <span class="required-mark">*</span></div>
-                    <div class="table-grid">
-                      ${Array.from({length:20}, (_,i) => {
-                        const n=i+1;
-                        return `<button type="button" class="table-card ${state.tableNumber === n ? 'active' : ''}" onclick="selectTable(${n})">Thẻ ${n}</button>`;
-                      }).join('')}
-                    </div>
+                  <div class="selected-table-summary">
+                    <span>Thẻ đã chọn</span>
+                    <strong>${state.tableNumber ? `Thẻ ${state.tableNumber}` : 'Chưa chọn'}</strong>
+                    <button type="button" class="btn small" onclick="openTablePicker()">Chọn thẻ</button>
                   </div>` : ''}
                 <label class="order-note-label">Ghi chú
                   <textarea id="orderNote" rows="2" maxlength="300" placeholder="Ví dụ: ít đá, không đường, đóng gói riêng..." oninput="state.orderNote=this.value"></textarea>
@@ -762,12 +758,47 @@ function renderPOS() {
 }
 
 function selectOrderType(type) {
-  state.orderType = type === 'takeaway' ? 'takeaway' : 'dine_in';
-  if (state.orderType !== 'dine_in') state.tableNumber = null;
+  if (type === 'dine_in') {
+    state.orderType = 'dine_in';
+    renderPOS();
+    openTablePicker();
+    return;
+  }
+  state.orderType = 'takeaway';
+  state.tableNumber = null;
   renderPOS();
 }
+
+function openTablePicker() {
+  openModal(`
+    <div class="table-picker-modal">
+      <div class="table-picker-modal-head">
+        <div>
+          <div class="eyebrow">Hình thức nhận món</div>
+          <h3>Chọn thẻ</h3>
+          <p>Chọn thẻ đang phục vụ cho đơn hàng này.</p>
+        </div>
+        <button type="button" class="modal-close-btn" onclick="closeModal()" aria-label="Đóng">×</button>
+      </div>
+      <div class="table-card-modal-grid">
+        ${Array.from({length:20}, (_,i) => {
+          const n=i+1;
+          return `<button type="button" class="table-card-modal ${state.tableNumber === n ? 'active' : ''}" onclick="selectTable(${n})">
+            <span class="table-card-number">${n}</span>
+            <span>Thẻ ${n}</span>
+          </button>`;
+        }).join('')}
+      </div>
+      <div class="modal-actions table-picker-actions">
+        <button type="button" class="btn" onclick="closeModal()">Hủy</button>
+      </div>
+    </div>
+  `);
+}
+
 function selectTable(n) {
   state.tableNumber = Number(n);
+  closeModal();
   renderPOS();
 }
 function setCat(c) { state.category = c; renderPOS(); }
