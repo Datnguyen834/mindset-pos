@@ -1924,3 +1924,84 @@ body.modal-open { overflow: hidden; }
   border-color:rgba(255,255,255,.45) !important;
 }
 @media(max-width:600px){.admin-menu{left:0;right:auto;width:225px;}}
+
+/* Order panel: wider and more compact checkout controls so the order list is easier to read. */
+@media (min-width: 1400px) {
+  #page.pos-page .pos-layout {
+    grid-template-columns: minmax(0, 1fr) 430px !important;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1399px) {
+  #page.pos-page .pos-layout {
+    grid-template-columns: minmax(0, 1fr) 410px !important;
+  }
+}
+
+#page.pos-page .cart {
+  padding: 16px;
+}
+
+#page.pos-page .cart-total {
+  padding-top: 8px;
+  margin-top: 6px;
+}
+
+#page.pos-page .payment-choice {
+  padding: 7px 9px;
+  margin: 7px 0;
+}
+
+#page.pos-page .order-service-box {
+  margin: 0 0 8px;
+  padding: 0 0 8px;
+}
+
+#page.pos-page .payment-label {
+  margin-bottom: 5px;
+  font-size: 11px;
+}
+
+#page.pos-page .order-type-options,
+#page.pos-page .payment-options {
+  gap: 7px;
+}
+
+#page.pos-page .payment-option {
+  min-height: 38px;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+#page.pos-page .selected-table-summary {
+  min-height: 38px;
+  margin-top: 6px;
+  padding: 5px 8px 5px 9px;
+}
+
+#page.pos-page .selected-table-summary .btn.small {
+  min-height: 28px;
+  padding: 4px 8px;
+}
+
+#page.pos-page .order-note-label {
+  margin-top: 6px;
+}
+
+#page.pos-page .order-note-label textarea {
+  min-height: 44px;
+  padding: 7px 9px;
+}
+
+#page.pos-page .total-line {
+  margin: 5px 0;
+}
+
+#page.pos-page .total-line.big {
+  margin-top: 8px;
+}
+
+#page.pos-page .payment-main {
+  min-height: 48px;
+  margin-top: 7px;
+}
