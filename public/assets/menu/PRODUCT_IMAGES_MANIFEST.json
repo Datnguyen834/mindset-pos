@@ -1,6 +1,0 @@
-{
-  "source": "sản phẩm.zip",
-  "destination": "public/assets/menu",
-  "image_count": 42,
-  "note": "Product images copied directly into the original Mindset POS project assets folder. Existing seed references for bakery images were updated to PNG/JPG assets."
-}

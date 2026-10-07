@@ -25,9 +25,11 @@ let state = {
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
 
 
-// ==================== MÈO TOM TƯƠNG TÁC TRÊN HEADER ====================
-// Atlas Tom đã được tách thành 7 hàng x 8 frame, mỗi frame 80x80.
-// Mỗi tư thế nằm trong canvas riêng, có padding trong suốt để không dính frame.
+// ==================== MÈO TƯƠNG TÁC TRÊN HEADER ====================
+// Sprite sheet: 384x288 = 12 cột x 9 hàng, mỗi frame gốc 32x32.
+// Các hàng trong asset được giữ nguyên để có thể dùng nhiều hành động:
+// 0 idle, 1 walk, 2-3 run/fast movement, 4 lie/sleep,
+// 5 sit/stand, 6 crouch/low walk, 7 play với bóng len, 8 leap/jump.
 let catController = null;
 
 function initInteractiveCat() {
@@ -35,29 +37,26 @@ function initInteractiveCat() {
   const cat = $('#movingCat');
   if (!track || !cat || catController) return;
 
-  // Atlas Tom: 8 cột x 7 hàng, mỗi frame 80x80.
+  // Sprite sheet 384x288: 12 cột x 9 hàng, mỗi frame 32x32.
+  // Khi hiển thị, mỗi frame được phóng lên 80x80 để nhìn rõ hơn.
   const W = 80;
-  const COLS = 8;
+  const COLS = 12;
   const FRAME_MS = 105;
   const WALK_SPEED = 58;
 
   const row = (r, count = 12, start = 0) =>
     Array.from({ length: count }, (_, i) => [start + i, r]);
 
-  // 7 hành động Tom, mỗi hành động 8 frame riêng biệt.
+  // Các hàng animation lấy trực tiếp từ sprite sheet bạn gửi.
   const ANIM = {
-    walk: row(0, 8),
-    idle: row(1, 8),
-    groom: row(2, 8),
-    sleep: row(3, 8),
-    stretch: row(4, 8),
-    angry: row(5, 8),
-    play: row(6, 8),
-    run: row(0, 8),
-    crawl: row(4, 8),
-    sit: row(1, 8),
-    idle2: row(5, 8),
-    jump: row(4, 8),
+    idle: row(0, 9),
+    walk: row(1, 11),
+    run: [...row(2, 12), ...row(3, 6)],
+    crawl: row(4, 10),
+    sit: row(5, 10),
+    idle2: row(6, 10),
+    play: row(7, 11),
+    jump: row(8, 6),
   };
 
   // Sinh mèo ở một vị trí ngẫu nhiên trong vùng trắng ngay từ lúc khởi tạo.
@@ -141,7 +140,7 @@ function initInteractiveCat() {
   function setFrame(frame) {
     const [col, r] = frame;
     cat.style.backgroundPosition = `${-(col * W)}px ${-(r * W)}px`;
-    cat.style.backgroundSize = `${COLS * W}px ${7 * W}px`;
+    cat.style.backgroundSize = `${COLS * W}px ${9 * W}px`;
   }
 
   function nextFrame(now) {
@@ -242,8 +241,8 @@ function initInteractiveCat() {
   function randomAction() {
     if (dragging) return scheduleRandomAction();
     const actions = [
-      ['idle', 3200], ['groom', 4200], ['sleep', 5200],
-      ['stretch', 3000], ['angry', 2200], ['play', 5200], ['run', 4200]
+      ['idle', 3200], ['sit', 4200], ['crawl', 3000],
+      ['idle2', 3500], ['play', 5200], ['jump', 2200], ['run', 4200]
     ];
     const [action, duration] = actions[Math.floor(Math.random() * actions.length)];
     if (action === 'run') runAction(duration);
@@ -260,8 +259,8 @@ function initInteractiveCat() {
   function react() {
     clickCount++;
     const reactions = [
-      ['stretch', 2400], ['play', 5200], ['groom', 4200],
-      ['sleep', 3200], ['angry', 2600], ['run', 4500]
+      ['jump', 2400], ['play', 5200], ['sit', 4200],
+      ['crawl', 3200], ['idle2', 3500], ['run', 4500]
     ];
     const [action, duration] = reactions[(clickCount - 1) % reactions.length];
     cat.classList.add('reacting');
