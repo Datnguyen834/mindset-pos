@@ -99,6 +99,8 @@ async function githubRequest(method, filePath, body) {
   return r.json();
 }
 async function commitImageToGitHub(filename, buffer, message) {
+  // Upload/replace exactly this file in GitHub. If the file already exists,
+  // its SHA is required by the Contents API for an update.
   const relative=`public/assets/menu/${filename}`;
   let sha;
   try { const current=await githubRequest('GET',relative); sha=current.sha; } catch(e) { if(e.status!==404) throw e; }
@@ -108,6 +110,56 @@ async function commitImageToGitHub(filename, buffer, message) {
   fs.mkdirSync(MENU_IMAGE_DIR,{recursive:true});
   fs.writeFileSync(path.join(MENU_IMAGE_DIR,filename),buffer);
   return imagePathFromFile(filename);
+}
+
+async function deleteImageFromGitHub(imagePath, message) {
+  const localFile=localImageFileFromPath(imagePath);
+  if(!localFile) return;
+  const relative=path.posix.join('public/assets/menu',path.basename(localFile));
+  let current;
+  try { current=await githubRequest('GET',relative); }
+  catch(e) { if(e.status===404) { try { fs.unlinkSync(localFile); } catch {} return; } throw e; }
+  await githubRequest('DELETE',relative,{message,sha:current.sha,branch:GITHUB_BRANCH});
+  try { fs.unlinkSync(localFile); } catch {}
+}
+
+async function replaceImageInGitHub(oldImagePath, filename, buffer, message) {
+  const newImagePath=imagePathFromFile(filename);
+  // Always make the new Git file the source of truth first. If the extension
+  // or filename changes, the previous Git file is explicitly deleted.
+  const savedPath=await commitImageToGitHub(filename,buffer,message);
+  if(oldImagePath && oldImagePath !== savedPath) {
+    await deleteImageFromGitHub(oldImagePath,`${message} - remove old image`);
+  }
+  return savedPath;
+}
+
+async function renameImageInGitHub(oldImagePath, filename, message) {
+  if(!oldImagePath) return null;
+  const oldLocal=localImageFileFromPath(oldImagePath);
+  if(!oldLocal) return oldImagePath;
+  const oldFilename=path.basename(oldLocal);
+  const newImagePath=imagePathFromFile(filename);
+  if(oldFilename === filename) return oldImagePath;
+
+  // Read the existing Git object, create the new path, then delete the old
+  // path. This is effectively a Git rename while keeping the actual bytes.
+  const oldRelative=`public/assets/menu/${oldFilename}`;
+  let current;
+  try { current=await githubRequest('GET',oldRelative); }
+  catch(e) { if(e.status===404) return null; throw e; }
+  const buffer=Buffer.from(String(current.content || '').replace(/\n/g,''),'base64');
+  await commitImageToGitHub(filename,buffer,message);
+  await deleteImageFromGitHub(oldImagePath,`${message} - remove old image`);
+  return newImagePath;
+}
+
+async function deleteProductImageIfUnused(imagePath, productId) {
+  if(!imagePath) return;
+  const refs=await q('SELECT COUNT(*)::int AS n FROM menu_items WHERE image_path=$1 AND id<>$2',[imagePath,productId]);
+  if(Number(refs.rows[0].n)===0) {
+    await deleteImageFromGitHub(imagePath,`Delete product image: ${imagePath}`);
+  }
 }
 function imagePathForName(name) {
   const aliases = new Map([
@@ -697,20 +749,48 @@ app.put('/api/admin/menu/:id',auth,adminOnly,upload.single('image'),async(req,re
   if(category!==undefined){const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});}
   for(const [k,v] of [['name',name],['category',category],['price',price!==undefined?money(price):undefined],['active',active!==undefined?active!=='false':undefined]]){if(v!==undefined){vals.push(v);sets.push(`${k}=$${vals.length}`)}}
   try {
+    const existingPath=current.rows[0].image_path;
+    const effectiveName=name!==undefined && String(name).trim() ? String(name).trim() : current.rows[0].name;
+    const desiredSlug=slugifyFileName(effectiveName);
+
     if(req.file){
       const ext=path.extname(req.file.originalname||'').toLowerCase() || (req.file.mimetype==='image/png'?'.png':req.file.mimetype==='image/webp'?'.webp':'.jpg');
-      const existingPath=current.rows[0].image_path;
-      const oldFile=existingPath ? path.basename(existingPath) : null;
-      const filename=oldFile && /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(oldFile) ? oldFile : `${slugifyFileName(name||current.rows[0].name)}${ext}`;
-      const imagePath=await commitImageToGitHub(filename,req.file.buffer,`Update product image: ${name||current.rows[0].name}`);
+      // Upload the new image and remove the old Git file, including when the
+      // extension changes (jpg -> png, etc.).
+      const filename=`${desiredSlug}${ext}`;
+      const imagePath=await replaceImageInGitHub(
+        existingPath,
+        filename,
+        req.file.buffer,
+        `Update product image: ${effectiveName}`
+      );
       vals.push(imagePath);sets.push(`image_path=$${vals.length}`);sets.push(`image_data=NULL`);
+    } else if(existingPath && name!==undefined && String(name).trim() && String(name).trim() !== String(current.rows[0].name).trim()) {
+      // Editing the product name also renames its Git image. The old path is
+      // deleted so stale images never accumulate in the repository.
+      const oldExt=path.extname(existingPath) || '.jpg';
+      const filename=`${desiredSlug}${oldExt}`;
+      const imagePath=await renameImageInGitHub(existingPath,filename,`Rename product image: ${effectiveName}`);
+      if(imagePath && imagePath !== existingPath){ vals.push(imagePath);sets.push(`image_path=$${vals.length}`);sets.push(`image_data=NULL`); }
     }
     vals.push(req.params.id);
     const r=await q(`UPDATE menu_items SET ${sets.length?sets.join(',')+',':''} updated_at=NOW() WHERE id=$${vals.length} RETURNING id,name,category,price,image_path AS image,active`,vals);
     res.json(r.rows[0]);
   } catch(e){ res.status(e.status===401||e.status===403?e.status:500).json({message:e.message||'Không thể lưu ảnh vào Git'}); }
 });
-app.delete('/api/admin/menu/:id',auth,adminOnly,async(req,res)=>{await q('UPDATE menu_items SET active=false WHERE id=$1',[req.params.id]);res.json({ok:true});});
+app.delete('/api/admin/menu/:id',auth,adminOnly,async(req,res)=>{
+  const current=await q('SELECT id,name,image_path FROM menu_items WHERE id=$1',[req.params.id]);
+  if(!current.rowCount)return res.status(404).json({message:'Không tìm thấy món'});
+  try {
+    // Remove the product image from Git when the product is deleted. If the
+    // same image is referenced by another product, keep it for that product.
+    await deleteProductImageIfUnused(current.rows[0].image_path,current.rows[0].id);
+    await q('UPDATE menu_items SET active=false,image_path=NULL,image_data=NULL,updated_at=NOW() WHERE id=$1',[req.params.id]);
+    res.json({ok:true});
+  } catch(e){
+    res.status(e.status===401||e.status===403?e.status:500).json({message:e.message||'Không thể xóa ảnh sản phẩm khỏi Git'});
+  }
+});
 app.post('/api/admin/categories',auth,adminOnly,async(req,res)=>{
   const name=String(req.body.name||'').trim();
   if(!name)return res.status(400).json({message:'Nhập tên danh mục'});
