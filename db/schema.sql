@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS menu_items (
   price INTEGER NOT NULL CHECK (price >= 0),
   image_path TEXT,
   image_data TEXT,
+  image_blob BYTEA,
+  image_mime TEXT,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

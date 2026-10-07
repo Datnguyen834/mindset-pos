@@ -65,102 +65,48 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const q = (text, params=[]) => pool.query(text, params);
 
-// Product images are source-controlled in Git. Neon stores only the relative image path.
+// Product images are stored in Neon, not Git. The local menu folder is used only
+// for a one-time migration of the images shipped with older builds.
 const MENU_IMAGE_DIR = path.join(__dirname, 'public/assets/menu');
-const GITHUB_OWNER = String(process.env.GITHUB_OWNER || 'Datnguyen834').trim();
-const GITHUB_REPO = String(process.env.GITHUB_REPO || 'mindset-pos').trim();
-const GITHUB_BRANCH = String(process.env.GITHUB_BRANCH || 'main').trim();
-const GITHUB_TOKEN = String(process.env.GITHUB_TOKEN || '').trim();
-const GITHUB_API = `https://api.github.com/repos/${encodeURIComponent(GITHUB_OWNER)}/${encodeURIComponent(GITHUB_REPO)}/contents`;
 
-function slugifyFileName(value) {
-  return String(value || 'mon')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'mon';
+function mimeTypeFromFilename(filename) {
+  const ext = path.extname(String(filename || '')).toLowerCase();
+  return ({
+    '.jpg':'image/jpeg','.jpeg':'image/jpeg','.png':'image/png','.webp':'image/webp',
+    '.gif':'image/gif','.svg':'image/svg+xml','.avif':'image/avif'
+  })[ext] || 'application/octet-stream';
 }
-function imagePathFromFile(file) { return `/assets/menu/${file}`; }
-function localImageFileFromPath(imagePath) {
-  const prefix='/assets/menu/';
-  if (!String(imagePath||'').startsWith(prefix)) return null;
-  const file=path.basename(String(imagePath).slice(prefix.length));
-  if (!file || file.includes('..') || /[\\/]/.test(file)) return null;
-  return path.join(MENU_IMAGE_DIR,file);
+
+function imageResponsePath(id, updatedAt) {
+  const version = updatedAt ? encodeURIComponent(new Date(updatedAt).getTime()) : Date.now();
+  return `/api/menu/${id}/image?v=${version}`;
 }
-async function githubRequest(method, filePath, body) {
-  if (!GITHUB_TOKEN) throw new Error('Thiếu GITHUB_TOKEN trên Render. Hãy thêm GitHub token để lưu ảnh vào Git.');
-  const headers={Authorization:`Bearer ${GITHUB_TOKEN}`,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'Mindset-POS'};
-  const url=`${GITHUB_API}/${filePath.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(GITHUB_BRANCH)}`;
-  const r=await fetch(url,{method,headers,body:body?JSON.stringify(body):undefined});
-  if (!r.ok) {
-    let detail=''; try { const j=await r.json(); detail=j.message||''; } catch {}
-    const err=new Error(`GitHub ${r.status}: ${detail||r.statusText}`); err.status=r.status; throw err;
+
+async function migrateLocalImagesToNeon() {
+  if (!fs.existsSync(MENU_IMAGE_DIR)) return;
+  const files = fs.readdirSync(MENU_IMAGE_DIR).filter(name => !name.endsWith('.json'));
+  if (!files.length) return;
+
+  const rows = await q(`SELECT id,name,image_path FROM menu_items WHERE image_blob IS NULL AND image_path IS NOT NULL`);
+  let migrated = 0;
+  for (const item of rows.rows) {
+    const imagePath = String(item.image_path || '');
+    const filename = path.basename(imagePath);
+    const file = path.join(MENU_IMAGE_DIR, filename);
+    if (!filename || !fs.existsSync(file)) continue;
+    try {
+      const buffer = fs.readFileSync(file);
+      await q(`UPDATE menu_items
+               SET image_blob=$1,image_mime=$2,image_path=NULL,updated_at=NOW()
+               WHERE id=$3`, [buffer, mimeTypeFromFilename(filename), item.id]);
+      migrated++;
+    } catch (e) {
+      console.error(`Image migration failed for ${item.name}:`, e?.message || e);
+    }
   }
-  return r.json();
-}
-async function commitImageToGitHub(filename, buffer, message) {
-  // Upload/replace exactly this file in GitHub. If the file already exists,
-  // its SHA is required by the Contents API for an update.
-  const relative=`public/assets/menu/${filename}`;
-  let sha;
-  try { const current=await githubRequest('GET',relative); sha=current.sha; } catch(e) { if(e.status!==404) throw e; }
-  const body={message,content:buffer.toString('base64'),branch:GITHUB_BRANCH};
-  if(sha) body.sha=sha;
-  await githubRequest('PUT',relative,body);
-  fs.mkdirSync(MENU_IMAGE_DIR,{recursive:true});
-  fs.writeFileSync(path.join(MENU_IMAGE_DIR,filename),buffer);
-  return imagePathFromFile(filename);
+  if (migrated) console.log(`Migrated ${migrated} product image(s) from the old local/Git folder into Neon.`);
 }
 
-async function deleteImageFromGitHub(imagePath, message) {
-  const localFile=localImageFileFromPath(imagePath);
-  if(!localFile) return;
-  const relative=path.posix.join('public/assets/menu',path.basename(localFile));
-  let current;
-  try { current=await githubRequest('GET',relative); }
-  catch(e) { if(e.status===404) { try { fs.unlinkSync(localFile); } catch {} return; } throw e; }
-  await githubRequest('DELETE',relative,{message,sha:current.sha,branch:GITHUB_BRANCH});
-  try { fs.unlinkSync(localFile); } catch {}
-}
-
-async function replaceImageInGitHub(oldImagePath, filename, buffer, message) {
-  const newImagePath=imagePathFromFile(filename);
-  // Always make the new Git file the source of truth first. If the extension
-  // or filename changes, the previous Git file is explicitly deleted.
-  const savedPath=await commitImageToGitHub(filename,buffer,message);
-  if(oldImagePath && oldImagePath !== savedPath) {
-    await deleteImageFromGitHub(oldImagePath,`${message} - remove old image`);
-  }
-  return savedPath;
-}
-
-async function renameImageInGitHub(oldImagePath, filename, message) {
-  if(!oldImagePath) return null;
-  const oldLocal=localImageFileFromPath(oldImagePath);
-  if(!oldLocal) return oldImagePath;
-  const oldFilename=path.basename(oldLocal);
-  const newImagePath=imagePathFromFile(filename);
-  if(oldFilename === filename) return oldImagePath;
-
-  // Read the existing Git object, create the new path, then delete the old
-  // path. This is effectively a Git rename while keeping the actual bytes.
-  const oldRelative=`public/assets/menu/${oldFilename}`;
-  let current;
-  try { current=await githubRequest('GET',oldRelative); }
-  catch(e) { if(e.status===404) return null; throw e; }
-  const buffer=Buffer.from(String(current.content || '').replace(/\n/g,''),'base64');
-  await commitImageToGitHub(filename,buffer,message);
-  await deleteImageFromGitHub(oldImagePath,`${message} - remove old image`);
-  return newImagePath;
-}
-
-async function deleteProductImageIfUnused(imagePath, productId) {
-  if(!imagePath) return;
-  const refs=await q('SELECT COUNT(*)::int AS n FROM menu_items WHERE image_path=$1 AND id<>$2',[imagePath,productId]);
-  if(Number(refs.rows[0].n)===0) {
-    await deleteImageFromGitHub(imagePath,`Delete product image: ${imagePath}`);
-  }
-}
 function imagePathForName(name) {
   const aliases = new Map([
     ['Cà phê đen','ca-phe-den.jpg'],['Cà phê sữa','ca-phe-sua.jpg'],['Americano','americano.jpg'],['Latte','latte.jpg'],['Cappuccino','cappuccino.jpg'],
@@ -182,6 +128,8 @@ async function initDb() {
   const schema = fs.readFileSync(path.join(__dirname, 'db/schema.sql'), 'utf8');
   await q(schema);
   await q(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_path TEXT`);
+  await q(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_blob BYTEA`);
+  await q(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_mime TEXT`);
   const count = await q('SELECT COUNT(*)::int AS n FROM users');
   if (count.rows[0].n === 0) {
     const a = await bcrypt.hash('admin@123', 10);
@@ -259,11 +207,22 @@ async function initDb() {
   // Neon is the source of truth after the initial seed. Re-inserting/updating
   // this list would resurrect products that an admin intentionally deleted.
 
-  // Migrate legacy base64 images to Git-backed paths when a matching file exists.
-  const legacy = await q('SELECT id,name FROM menu_items WHERE image_path IS NULL');
-  for (const item of legacy.rows) {
-    const imagePath=imagePathForName(item.name);
-    if(imagePath) await q('UPDATE menu_items SET image_path=$1, image_data=NULL, updated_at=NOW() WHERE id=$2',[imagePath,item.id]);
+  // One-time migration: move images from the old Git/local folder into Neon.
+  // Also migrate legacy base64 text images from older database versions.
+  // After this succeeds, product CRUD never touches Git again.
+  await migrateLocalImagesToNeon();
+  const legacyBase64 = await q(`SELECT id,image_data FROM menu_items WHERE image_blob IS NULL AND image_data IS NOT NULL AND TRIM(image_data) <> ''`);
+  for (const item of legacyBase64.rows) {
+    try {
+      const raw = String(item.image_data || '');
+      const match = raw.match(/^data:([^;]+);base64,(.+)$/s);
+      const mime = match?.[1] || 'image/jpeg';
+      const encoded = match?.[2] || raw;
+      const buffer = Buffer.from(encoded.replace(/\s/g,''), 'base64');
+      if (buffer.length) await q('UPDATE menu_items SET image_blob=$1,image_mime=$2,image_data=NULL,image_path=NULL,updated_at=NOW() WHERE id=$3',[buffer,mime,item.id]);
+    } catch (e) {
+      console.error(`Legacy database image migration failed for menu ${item.id}:`, e?.message || e);
+    }
   }
   await q(`INSERT INTO settings(key,value) VALUES('discount_rules','[]') ON CONFLICT(key) DO NOTHING`);
 }
@@ -330,7 +289,24 @@ app.get('/api/auth/me',auth,async(req,res)=>{
   res.json({user:{id:u.id,username:u.username,fullName:u.full_name,role:u.role}});
 });
 
-app.get('/api/menu',auth,async(req,res)=>{ const r=await q(`SELECT id,name,category,price,image_path AS image,active FROM menu_items WHERE active=true ORDER BY id`); res.json(r.rows); });
+app.get('/api/menu',auth,async(req,res)=>{
+  const r=await q(`SELECT id,name,category,price,
+    CASE WHEN image_blob IS NOT NULL THEN '/api/menu/' || id || '/image?v=' || EXTRACT(EPOCH FROM updated_at)::bigint
+         ELSE image_path END AS image,
+    active
+    FROM menu_items WHERE active=true ORDER BY id`);
+  res.json(r.rows);
+});
+
+app.get('/api/menu/:id/image',auth,async(req,res)=>{
+  const r=await q('SELECT image_blob,image_mime FROM menu_items WHERE id=$1 AND active=true',[req.params.id]);
+  if(!r.rowCount || !r.rows[0].image_blob) return res.status(404).end();
+  res.set('Content-Type', r.rows[0].image_mime || 'application/octet-stream');
+  // Versioned URL changes whenever an image changes, so the browser can cache
+  // aggressively without ever showing the previous image after an update.
+  res.set('Cache-Control','private, max-age=31536000, immutable');
+  res.end(r.rows[0].image_blob);
+});
 app.get('/api/categories',auth,async(req,res)=>{ const r=await q('SELECT id,name FROM categories WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/toppings',auth,async(req,res)=>{ const r=await q('SELECT id,name,price FROM toppings WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/settings/payos',auth,payOSAdminOnly,async(req,res)=>{ const cfg=await getPayOSConfig(); if(!cfg) return res.json({configured:false,source:null,clientId:''}); const mask=(v)=>v ? `••••${String(v).slice(-4)}` : ''; res.json({configured:true,source:cfg.source,clientId:cfg.clientId||'',apiKeyMasked:mask(cfg.apiKey),checksumKeyMasked:mask(cfg.checksumKey)}); });
@@ -672,66 +648,47 @@ app.post('/api/admin/menu',auth,adminOnly,upload.single('image'),async(req,res)=
   if(!name||price===undefined)return res.status(400).json({message:'Thiếu tên/giá'});
   const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);
   if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});
-  let imagePath=null;
   try {
-    if(req.file){
-      const ext=path.extname(req.file.originalname||'').toLowerCase() || (req.file.mimetype==='image/png'?'.png':req.file.mimetype==='image/webp'?'.webp':'.jpg');
-      const filename=`${slugifyFileName(name)}${ext}`;
-      imagePath=await commitImageToGitHub(filename,req.file.buffer,`Update product image: ${name}`);
-    }
-    const r=await q('INSERT INTO menu_items(name,category,price,image_path,image_data) VALUES($1,$2,$3,$4,NULL) RETURNING id,name,category,price,image_path AS image,active',[name,category,money(price),imagePath]);
+    const imageBlob=req.file?.buffer || null;
+    const imageMime=req.file?.mimetype || null;
+    const r=await q(`INSERT INTO menu_items(name,category,price,image_path,image_data,image_blob,image_mime)
+      VALUES($1,$2,$3,NULL,NULL,$4,$5)
+      RETURNING id,name,category,price,
+        CASE WHEN image_blob IS NOT NULL THEN '/api/menu/' || id || '/image?v=' || EXTRACT(EPOCH FROM updated_at)::bigint ELSE NULL END AS image,
+        active`,
+      [name,category,money(price),imageBlob,imageMime]);
     res.json(r.rows[0]);
-  } catch(e){ res.status(e.status===401||e.status===403?e.status:500).json({message:e.message||'Không thể lưu ảnh vào Git'}); }
+  } catch(e){ res.status(500).json({message:e.message||'Không thể lưu ảnh vào Neon'}); }
 });
+
 app.put('/api/admin/menu/:id',auth,adminOnly,upload.single('image'),async(req,res)=>{
   const {name,category,price,active}=req.body;
   const current=await q('SELECT * FROM menu_items WHERE id=$1',[req.params.id]);
   if(!current.rowCount)return res.status(404).json({message:'Không tìm thấy món'});
   const sets=[];const vals=[];
   if(category!==undefined){const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});}
-  for(const [k,v] of [['name',name],['category',category],['price',price!==undefined?money(price):undefined],['active',active!==undefined?active!=='false':undefined]]){if(v!==undefined){vals.push(v);sets.push(`${k}=$${vals.length}`)}}
-  try {
-    const existingPath=current.rows[0].image_path;
-    const effectiveName=name!==undefined && String(name).trim() ? String(name).trim() : current.rows[0].name;
-    const desiredSlug=slugifyFileName(effectiveName);
-
-    if(req.file){
-      const ext=path.extname(req.file.originalname||'').toLowerCase() || (req.file.mimetype==='image/png'?'.png':req.file.mimetype==='image/webp'?'.webp':'.jpg');
-      // Upload the new image and remove the old Git file, including when the
-      // extension changes (jpg -> png, etc.).
-      const filename=`${desiredSlug}${ext}`;
-      const imagePath=await replaceImageInGitHub(
-        existingPath,
-        filename,
-        req.file.buffer,
-        `Update product image: ${effectiveName}`
-      );
-      vals.push(imagePath);sets.push(`image_path=$${vals.length}`);sets.push(`image_data=NULL`);
-    } else if(existingPath && name!==undefined && String(name).trim() && String(name).trim() !== String(current.rows[0].name).trim()) {
-      // Editing the product name also renames its Git image. The old path is
-      // deleted so stale images never accumulate in the repository.
-      const oldExt=path.extname(existingPath) || '.jpg';
-      const filename=`${desiredSlug}${oldExt}`;
-      const imagePath=await renameImageInGitHub(existingPath,filename,`Rename product image: ${effectiveName}`);
-      if(imagePath && imagePath !== existingPath){ vals.push(imagePath);sets.push(`image_path=$${vals.length}`);sets.push(`image_data=NULL`); }
-    }
-    vals.push(req.params.id);
-    const r=await q(`UPDATE menu_items SET ${sets.length?sets.join(',')+',':''} updated_at=NOW() WHERE id=$${vals.length} RETURNING id,name,category,price,image_path AS image,active`,vals);
-    res.json(r.rows[0]);
-  } catch(e){ res.status(e.status===401||e.status===403?e.status:500).json({message:e.message||'Không thể lưu ảnh vào Git'}); }
-});
-app.delete('/api/admin/menu/:id',auth,adminOnly,async(req,res)=>{
-  const current=await q('SELECT id,name,image_path FROM menu_items WHERE id=$1',[req.params.id]);
-  if(!current.rowCount)return res.status(404).json({message:'Không tìm thấy món'});
-  try {
-    // Remove the product image from Git when the product is deleted. If the
-    // same image is referenced by another product, keep it for that product.
-    await deleteProductImageIfUnused(current.rows[0].image_path,current.rows[0].id);
-    await q('UPDATE menu_items SET active=false,image_path=NULL,image_data=NULL,updated_at=NOW() WHERE id=$1',[req.params.id]);
-    res.json({ok:true});
-  } catch(e){
-    res.status(e.status===401||e.status===403?e.status:500).json({message:e.message||'Không thể xóa ảnh sản phẩm khỏi Git'});
+  for(const [k,v] of [['name',name],['category',category],['price',price!==undefined?money(price):undefined],['active',active!==undefined?active!=='false':undefined]]){
+    if(v!==undefined){vals.push(v);sets.push(`${k}=$${vals.length}`)}
   }
+  if(req.file){
+    vals.push(req.file.buffer); sets.push(`image_blob=$${vals.length}`);
+    vals.push(req.file.mimetype || 'application/octet-stream'); sets.push(`image_mime=$${vals.length}`);
+    sets.push('image_path=NULL');
+    sets.push('image_data=NULL');
+  }
+  vals.push(req.params.id);
+  const r=await q(`UPDATE menu_items SET ${sets.length?sets.join(',')+',':''} updated_at=NOW() WHERE id=$${vals.length}
+    RETURNING id,name,category,price,
+      CASE WHEN image_blob IS NOT NULL THEN '/api/menu/' || id || '/image?v=' || EXTRACT(EPOCH FROM updated_at)::bigint ELSE NULL END AS image,
+      active`,vals);
+  res.json(r.rows[0]);
+});
+
+app.delete('/api/admin/menu/:id',auth,adminOnly,async(req,res)=>{
+  const current=await q('SELECT id FROM menu_items WHERE id=$1',[req.params.id]);
+  if(!current.rowCount)return res.status(404).json({message:'Không tìm thấy món'});
+  await q('UPDATE menu_items SET active=false,image_path=NULL,image_data=NULL,image_blob=NULL,image_mime=NULL,updated_at=NOW() WHERE id=$1',[req.params.id]);
+  res.json({ok:true});
 });
 app.post('/api/admin/categories',auth,adminOnly,async(req,res)=>{
   const name=String(req.body.name||'').trim();
