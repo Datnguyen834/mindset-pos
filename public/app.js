@@ -26,10 +26,9 @@ const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ
 
 
 // ==================== MÈO TƯƠNG TÁC TRÊN HEADER ====================
-// Sprite sheet: 384x288 = 12 cột x 9 hàng, mỗi frame gốc 32x32.
-// Các hàng trong asset được giữ nguyên để có thể dùng nhiều hành động:
-// 0 idle, 1 walk, 2-3 run/fast movement, 4 lie/sleep,
-// 5 sit/stand, 6 crouch/low walk, 7 play với bóng len, 8 leap/jump.
+// Sprite mèo đen mới: 8 cột x 7 hàng, mỗi frame 128x128.
+// 0 đi bộ, 1 ngơ ngác, 2 liếm lông, 3 nằm ngủ,
+// 4 vươn vai, 5 nổi giận, 6 nằm chơi bóng.
 let catController = null;
 
 function initInteractiveCat() {
@@ -37,23 +36,22 @@ function initInteractiveCat() {
   const cat = $('#movingCat');
   if (!track || !cat || catController) return;
 
-  // Sprite Mindset mới: 8 cột x 5 hàng, mỗi frame 96x96.
-  // Hàng 0: đi bộ phải | Hàng 1: đi bộ trái
-  // Hàng 2: nằm/ngủ   | Hàng 3: chơi bóng
-  // Hàng 4: ngồi liếm lông
-  const W = 96;
+  // Sprite mèo đen: 8 cột x 7 hàng, mỗi frame 128x128.
+  const W = 128;
   const COLS = 8;
-  const ROWS = 5;
+  const ROWS = 7;
   const FRAME_MS = 115;
   const WALK_SPEED = 58;
 
   const row = (r) => Array.from({ length: COLS }, (_, i) => [i, r]);
   const ANIM = {
-    walkRight: row(0),
-    walkLeft: row(1),
-    sleep: row(2),
-    ball: row(3),
-    groom: row(4)
+    walk: row(0),
+    confused: row(1),
+    groom: row(2),
+    sleep: row(3),
+    stretch: row(4),
+    angry: row(5),
+    ball: row(6)
   };
 
   let x = 0, y = 0;
@@ -80,12 +78,12 @@ function initInteractiveCat() {
   }
 
   function setDirectionClass() {
-    // Sprite đã có đủ 2 hướng nên không cần scaleX.
-    cat.classList.toggle('face-left', false);
+    // Sprite chỉ có một hướng; lật ngang khi mèo đi sang trái.
+    cat.classList.toggle('face-left', dirX < 0);
   }
 
   function currentWalkFrames() {
-    return dirX < 0 ? ANIM.walkLeft : ANIM.walkRight;
+    return ANIM.walk;
   }
 
   function setFrame(frame) {
@@ -96,7 +94,7 @@ function initInteractiveCat() {
 
   function currentFrames() {
     if (mode === 'walk') return currentWalkFrames();
-    return ANIM[mode] || ANIM.walkRight;
+    return ANIM[mode] || ANIM.walk;
   }
 
   function nextFrame(now) {
@@ -184,10 +182,12 @@ function initInteractiveCat() {
   function randomAction() {
     if (dragging) return scheduleRandomAction();
     const actions = [
-      ['sleep', 3600],
-      ['sleep', 4300],
-      ['ball', 4800],
+      ['confused', 3000],
       ['groom', 4200],
+      ['sleep', 4200],
+      ['stretch', 3200],
+      ['angry', 2600],
+      ['ball', 4800],
       ['groom', 5000]
     ];
     const [name, duration] = actions[Math.floor(Math.random() * actions.length)];
@@ -202,10 +202,12 @@ function initInteractiveCat() {
   function react() {
     clickCount++;
     const reactions = [
-      ['ball', 5000],
+      ['confused', 3000],
       ['groom', 4300],
-      ['sleep', 3800],
+      ['stretch', 3200],
       ['ball', 5000],
+      ['angry', 2800],
+      ['sleep', 3800],
       ['groom', 4300]
     ];
     const [name, duration] = reactions[(clickCount - 1) % reactions.length];

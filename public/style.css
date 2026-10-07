@@ -2005,3 +2005,9 @@ body.modal-open { overflow: hidden; }
   min-height: 48px;
   margin-top: 7px;
 }
+
+/* ===== Mèo đen mới: sprite 8x7 ===== */
+.moving-cat{width:128px;height:128px;background-size:1024px 896px;}
+.moving-cat.face-left{transform:translate3d(0,0,0) scaleX(-1);}
+.moving-cat.face-left.dragging{transform:translate3d(0,-4px,0) scaleX(-1) scale(1.05);}
+@media(max-width:650px){.moving-cat{width:112px;height:112px;background-size:896px 784px;}}
