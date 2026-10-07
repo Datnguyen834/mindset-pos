@@ -91,7 +91,7 @@ async function initDb() {
   const menuCount = await q('SELECT COUNT(*)::int AS n FROM menu_items');
   if (menuCount.rows[0].n === 0) {
     const items = [
-      ['Cà phê đen','Cà phê',25000,'ca-phe-den.jpg'],['Cà phê sữa','Cà phê',28000,'ca-phe-sua.jpg'],['Americano','Cà phê',25000,'americano.jpg'],['Latte','Cà phê',35000,'latte.jpg'],['Cappuccino','Cà phê',35000,'cappuccino.jpg'],
+      ['Cà phê đen','Cà phê',25000,'ca-phe-den.jpg'],['Cà phê sữa','Cà phê',28000,'ca-phe-sua-tuoi.jpg'],['Americano','Cà phê',25000,'americano.jpg'],['Latte','Cà phê',35000,'latte.jpg'],['Cappuccino','Cà phê',35000,'cappuccino.jpg'],
       ['Cold Brew','Cà phê',35000,'cold-brew.jpg'],['Bạc xỉu','Cà phê',32000,'bac-xiu.jpg'],['Matcha Latte','Trà',40000,'matcha-latte.jpg'],['Trà đào','Trà',35000,'tra-dao.jpg'],['Trà vải','Trà',35000,'tra-vai.jpg'],
       ['Trà ô long','Trà',30000,'tra-o-long.jpg'],['Trà lài','Trà',30000,'tra-lai.jpg'],['Chocolate','Khác',35000,'chocolate.jpg'],['Đá xay socola','Đá xay',45000,'da-xay-socola.jpg'],['Đá xay matcha','Đá xay',45000,'da-xay-matcha.jpg']
     ];
@@ -104,12 +104,12 @@ async function initDb() {
   // Add bakery category/products without duplicating existing data.
   await q(`INSERT INTO categories(name) VALUES('Bánh ngọt') ON CONFLICT(name) DO NOTHING`);
   const bakeryItems = [
-    ['Tiramisu','Bánh ngọt',45000,'tiramisu.svg'],
-    ['Cheesecake','Bánh ngọt',45000,'cheesecake.svg'],
-    ['Croissant','Bánh ngọt',30000,'croissant.svg'],
+    ['Tiramisu','Bánh ngọt',45000,'tiramisu.png'],
+    ['Cheesecake','Bánh ngọt',45000,'cheesecake.png'],
+    ['Croissant','Bánh ngọt',30000,'croissant.jpg'],
     ['Su kem','Bánh ngọt',28000,'su-kem.svg'],
-    ['Red Velvet','Bánh ngọt',42000,'red-velvet.svg'],
-    ['Cookie chocolate','Bánh ngọt',22000,'cookie.svg']
+    ['Red Velvet','Bánh ngọt',42000,'red-velvet.png'],
+    ['Cookie chocolate','Bánh ngọt',22000,'cookie-chocolate-chip.png']
   ];
   for (const [name,cat,price,file] of bakeryItems) {
     const exists = await q('SELECT id FROM menu_items WHERE name=$1 LIMIT 1',[name]);
