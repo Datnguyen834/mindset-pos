@@ -203,7 +203,8 @@ async function initDb() {
   await q(`UPDATE member_rewards SET remaining_quantity = 0 WHERE redeemed_at IS NOT NULL`);
 
   const menuCount = await q('SELECT COUNT(*)::int AS n FROM menu_items');
-  if (menuCount.rows[0].n === 0) {
+  const freshMenuDatabase = Number(menuCount.rows[0].n) === 0;
+  if (freshMenuDatabase) {
     const items = [
       ['Cà phê đen','Cà phê',25000,'ca-phe-den.jpg'],['Cà phê sữa','Cà phê',28000,'ca-phe-sua.jpg'],['Americano','Cà phê',25000,'americano.jpg'],['Latte','Cà phê',35000,'latte.jpg'],['Cappuccino','Cà phê',35000,'cappuccino.jpg'],
       ['Cold Brew','Cà phê',35000,'cold-brew.jpg'],['Bạc xỉu','Cà phê',32000,'bac-xiu.jpg'],['Matcha Latte','Trà',40000,'matcha-latte.jpg'],['Trà đào','Trà',35000,'tra-dao.jpg'],['Trà vải','Trà',35000,'tra-vai.jpg'],
@@ -214,19 +215,19 @@ async function initDb() {
       await q('INSERT INTO menu_items(name,category,price,image_path,image_data) VALUES($1,$2,$3,$4,NULL)',[name,cat,price,imagePath]);
     }
   }
-  // Add bakery category/products without duplicating existing data.
-  await q(`INSERT INTO categories(name) VALUES('Bánh ngọt') ON CONFLICT(name) DO NOTHING`);
-  const bakeryItems = [
-    ['Tiramisu','Bánh ngọt',45000,'tiramisu.svg'],
-    ['Cheesecake','Bánh ngọt',45000,'cheesecake.svg'],
-    ['Croissant','Bánh ngọt',30000,'croissant.svg'],
-    ['Su kem','Bánh ngọt',28000,'su-kem.svg'],
-    ['Red Velvet','Bánh ngọt',42000,'red-velvet.svg'],
-    ['Cookie chocolate','Bánh ngọt',22000,'cookie.svg']
-  ];
-  for (const [name,cat,price,file] of bakeryItems) {
-    const exists = await q('SELECT id FROM menu_items WHERE name=$1 LIMIT 1',[name]);
-    if (!exists.rowCount) {
+  // Seed bakery only when the database is brand new. Never recreate a product
+  // that an admin deleted later. Neon is the source of truth after first seed.
+  if (freshMenuDatabase) {
+    await q(`INSERT INTO categories(name) VALUES('Bánh ngọt') ON CONFLICT(name) DO NOTHING`);
+    const bakeryItems = [
+      ['Tiramisu','Bánh ngọt',45000,'tiramisu.svg'],
+      ['Cheesecake','Bánh ngọt',45000,'cheesecake.svg'],
+      ['Croissant','Bánh ngọt',30000,'croissant.svg'],
+      ['Su kem','Bánh ngọt',28000,'su-kem.svg'],
+      ['Red Velvet','Bánh ngọt',42000,'red-velvet.svg'],
+      ['Cookie chocolate','Bánh ngọt',22000,'cookie.svg']
+    ];
+    for (const [name,cat,price,file] of bakeryItems) {
       const imagePath = fs.existsSync(path.join(MENU_IMAGE_DIR,file)) ? imagePathFromFile(file) : null;
       await q('INSERT INTO menu_items(name,category,price,image_path,image_data) VALUES($1,$2,$3,$4,NULL)',[name,cat,price,imagePath]);
     }
@@ -254,69 +255,10 @@ async function initDb() {
     DELETE FROM categories
     WHERE LOWER(TRIM(name)) IN ('sinh tố','nước ép')
   `);
-  // Full menu from MENU QUÁN.docx: keep categories and prices in sync.
-  const fullMenu = [
-    // Cà phê
-    ['Cà phê đen','Cà phê',25000],
-    ['Cà phê sữa','Cà phê',28000],
-    ['Bạc xỉu','Cà phê',32000],
-    ['Cà phê sữa tươi','Cà phê',32000],
-    ['Cà phê muối','Cà phê',35000],
-    ['Cà phê cốt dừa','Cà phê',38000],
-    ['Americano','Cà phê',30000],
-    ['Cappuccino','Cà phê',38000],
-    ['Latte','Cà phê',38000],
-    ['Mocha','Cà phê',40000],
-    // Trà sữa
-    ['Trà sữa truyền thống','Trà sữa',30000],
-    ['Trà sữa socola','Trà sữa',32000],
-    ['Trà sữa matcha','Trà sữa',35000],
-    ['Trà sữa khoai môn','Trà sữa',35000],
-    ['Trà sữa caramel','Trà sữa',35000],
-    ['Trà sữa dâu','Trà sữa',35000],
-    ['Trà sữa thái xanh','Trà sữa',32000],
-    ['Trà sữa thái đỏ','Trà sữa',32000],
-    ['Trà sữa kem cheese','Trà sữa',38000],
-    ['Trà sữa trân châu đường đen','Trà sữa',38000],
-    // Trà
-    ['Trà đào cam sả','Trà',35000],
-    ['Trà vải','Trà',32000],
-    ['Trà dâu','Trà',32000],
-    ['Trà tắc mật ong','Trà',28000],
-    ['Trà chanh','Trà',25000],
-    ['Trà tắc xí muội','Trà',30000],
-    ['Trà nhiệt đới','Trà',35000],
-    ['Trà ô long đào','Trà',35000],
-    // Đá xay
-    ['Đá xay chocolate','Đá xay',40000],
-    ['Đá xay cookies','Đá xay',42000],
-    ['Đá xay matcha','Đá xay',42000],
-    ['Đá xay caramel','Đá xay',42000],
-    ['Đá xay dâu','Đá xay',40000],
-    ['Đá xay xoài','Đá xay',40000],
-    ['Đá xay cà phê','Đá xay',42000],
-    ['Đá xay oreo','Đá xay',42000],
-    // Bánh ngọt
-    ['Bánh tiramisu','Bánh ngọt',45000],
-    ['Bánh cheesecake','Bánh ngọt',45000],
-    ['Bánh red velvet','Bánh ngọt',45000],
-    ['Bánh chocolate','Bánh ngọt',40000],
-    ['Bánh matcha','Bánh ngọt',42000],
-    ['Bánh bông lan trứng muối','Bánh ngọt',38000],
-    ['Croissant','Bánh ngọt',30000],
-    ['Croissant chocolate','Bánh ngọt',35000],
-    ['Cookie chocolate chip','Bánh ngọt',25000],
-    ['Brownie','Bánh ngọt',30000],
-  ];
-  for (const [name, cat, price] of fullMenu) {
-    await q(`INSERT INTO categories(name) VALUES($1) ON CONFLICT(name) DO NOTHING`, [cat]);
-    const existing = await q(`SELECT id FROM menu_items WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) ORDER BY id LIMIT 1`, [name]);
-    if (existing.rowCount) {
-      await q(`UPDATE menu_items SET category=$1, price=$2, active=TRUE, updated_at=NOW() WHERE id=$3`, [cat, price, existing.rows[0].id]);
-    } else {
-      await q(`INSERT INTO menu_items(name,category,price,image_path,image_data) VALUES($1,$2,$3,$4,NULL)`, [name, cat, price, imagePathForName(name)]);
-    }
-  }
+  // IMPORTANT: do not synchronize a hard-coded full menu on every startup.
+  // Neon is the source of truth after the initial seed. Re-inserting/updating
+  // this list would resurrect products that an admin intentionally deleted.
+
   // Migrate legacy base64 images to Git-backed paths when a matching file exists.
   const legacy = await q('SELECT id,name FROM menu_items WHERE image_path IS NULL');
   for (const item of legacy.rows) {
