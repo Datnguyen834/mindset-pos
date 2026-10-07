@@ -1308,7 +1308,7 @@ async function finishPaidTransfer(orderId) {
     renderPOS();
     // Thanh toán chuyển khoản thành công -> mở bill ngay, không cần bấm "In bill".
     await printOrder(d.id);
-    toast(`Đã nhận chuyển khoản #${d.id} — ${money(d.total)}`);
+    toast(`Đã nhận chuyển khoản — ${money(d.total)}`);
   } catch (e) {
     toast(e.message || 'Đã nhận thanh toán nhưng không tải được hóa đơn', true);
   }
@@ -1328,7 +1328,7 @@ async function cancelTransferPayment() {
 
   // Đóng modal ngay. Backend đánh dấu cancelling tức thì rồi hủy payment link ở payOS nền.
   closeModal();
-  toast(`Đã gửi yêu cầu hủy thanh toán đơn #${orderId}`);
+  toast(`Đã gửi yêu cầu hủy thanh toán`);
   try {
     await api(`/api/payos/cancel-payment/${orderId}`, {method:'POST'});
   } catch (e) {
@@ -1601,7 +1601,7 @@ async function completePayment(method, cashMeta = null) {
     renderPOS();
     // Thanh toán thành công -> mở bill ngay, không cần qua màn hình xác nhận.
     await printOrder(d.orderId);
-    toast(`Đã thanh toán #${d.orderId} — ${money(d.total)}`);
+    toast(`Đã thanh toán — ${money(d.total)}`);
   } catch (e) { toast(e.message, true); }
 }
 
