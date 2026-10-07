@@ -12,7 +12,7 @@ let state = {
   payosConfig: {configured:false,source:null,clientId:'',apiKeyMasked:'',checksumKeyMasked:''},
   discountRules: [],
   page: 'pos',
-  paymentMethod: 'cash',
+  paymentMethod: null,
   orderType: null,
   tableNumber: null,
   orderNote: '',
@@ -752,10 +752,10 @@ function renderPOS() {
                   <textarea id="orderNote" rows="2" maxlength="300" placeholder="Ví dụ: ít đá, không đường, đóng gói riêng..." oninput="state.orderNote=this.value"></textarea>
                 </label>
               </div>
-              <div class="payment-label">Phương thức thanh toán</div>
+              <div class="payment-label">Phương thức thanh toán <span class="required-mark">*</span></div>
               <div class="payment-options">
-                <button class="payment-option active" id="payCash" onclick="selectPayment('cash')">💵 Tiền mặt</button>
-                <button class="payment-option" id="payTransfer" onclick="selectPayment('transfer')">▣ Chuyển khoản</button>
+                <button type="button" class="payment-option" id="payCash" onclick="selectPayment('cash')">💵 Tiền mặt</button>
+                <button type="button" class="payment-option" id="payTransfer" onclick="selectPayment('transfer')">▣ Chuyển khoản</button>
               </div>
             </div>
             <div class="total-line big"><span>Tổng tiền</span><span id="cartTotal">0đ</span></div>
@@ -1211,6 +1211,7 @@ function clearCart() {
   state.pendingCustomerSelection = null;
   state.orderType = null;
   state.tableNumber = null;
+  state.paymentMethod = null;
   state.orderNote = '';
   renderPOS();
 }
@@ -1297,6 +1298,10 @@ function validateOrderType() {
   }
   if (state.orderType === 'dine_in' && !state.tableNumber) {
     toast('Vui lòng chọn bàn', true);
+    return false;
+  }
+  if (!state.paymentMethod) {
+    toast('Vui lòng chọn phương thức thanh toán', true);
     return false;
   }
   return true;
@@ -1411,6 +1416,7 @@ async function finishPaidTransfer(orderId) {
     state.checkoutCustomer = {customer:null,redeem:false,coupon:null};
     state.orderType = null;
     state.tableNumber = null;
+    state.paymentMethod = null;
     state.orderNote = '';
     closeModal();
     renderPOS();
@@ -1710,6 +1716,7 @@ async function completePayment(method, cashMeta = null) {
     state.checkoutCustomer = {customer:null,redeem:false,coupon:null};
     state.orderType = null;
     state.tableNumber = null;
+    state.paymentMethod = null;
     state.orderNote = '';
     closeModal();
     renderPOS();
