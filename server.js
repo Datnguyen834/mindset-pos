@@ -130,6 +130,19 @@ async function initDb() {
   await q(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_path TEXT`);
   await q(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_blob BYTEA`);
   await q(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_mime TEXT`);
+  // Persistent login sessions live in Neon, so a Render restart/deploy cannot
+  // invalidate a user's login merely because the process restarted.
+  await q(`CREATE TABLE IF NOT EXISTS auth_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    token_hash TEXT UNIQUE NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await q(`CREATE INDEX IF NOT EXISTS auth_sessions_user_idx ON auth_sessions(user_id)`);
+  await q(`CREATE INDEX IF NOT EXISTS auth_sessions_expires_idx ON auth_sessions(expires_at)`);
+  await q(`DELETE FROM auth_sessions WHERE expires_at < NOW()`);
   const count = await q('SELECT COUNT(*)::int AS n FROM users');
   if (count.rows[0].n === 0) {
     const a = await bcrypt.hash('admin@123', 10);
@@ -228,18 +241,60 @@ async function initDb() {
 }
 
 function sign(user) { return jwt.sign({ id:user.id, username:user.username, fullName:user.full_name, role:user.role }, JWT_SECRET, { expiresIn:'30d' }); }
-function auth(req,res,next) {
+const SESSION_COOKIE = 'mindset_session';
+const SESSION_DAYS = 30;
+function hashSessionToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+async function createSession(userId) {
+  const token = crypto.randomBytes(48).toString('base64url');
+  const tokenHash = hashSessionToken(token);
+  await q('DELETE FROM auth_sessions WHERE expires_at < NOW()');
+  await q(`INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES($1,$2,NOW()+($3 * INTERVAL '1 day'))`, [tokenHash, userId, SESSION_DAYS]);
+  return token;
+}
+async function revokeSession(token) {
+  if (!token) return;
+  await q('DELETE FROM auth_sessions WHERE token_hash=$1', [hashSessionToken(token)]);
+}
+async function findSession(token) {
+  if (!token) return null;
+  const r = await q(`SELECT s.id,s.user_id,s.expires_at,u.id,u.username,u.full_name,u.role,u.active
+                     FROM auth_sessions s JOIN users u ON u.id=s.user_id
+                     WHERE s.token_hash=$1 AND s.expires_at > NOW() AND u.active=true`, [hashSessionToken(token)]);
+  if (!r.rowCount) return null;
+  await q('UPDATE auth_sessions SET last_seen_at=NOW(), expires_at=NOW()+($1 * INTERVAL \'1 day\') WHERE id=$2', [SESSION_DAYS, r.rows[0].id]);
+  return r.rows[0];
+}
+function setSessionCookie(res, token) {
+  res.cookie(SESSION_COOKIE, token, {
+    httpOnly:true,
+    sameSite:'lax',
+    secure:process.env.NODE_ENV==='production',
+    path:'/',
+    maxAge:SESSION_DAYS*24*60*60*1000
+  });
+}
+function clearSessionCookie(res) {
+  res.clearCookie(SESSION_COOKIE,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',path:'/'});
+}
+async function auth(req,res,next){
   try {
-    // Ưu tiên cookie HttpOnly; Authorization là phương án dự phòng để F5
-    // không làm mất phiên nếu trình duyệt/hosting không gửi lại cookie.
+    // Persistent Neon session is the primary mechanism. Authorization is kept
+    // as a fallback so a reload also works if the browser omits the cookie.
     const bearer = req.headers.authorization?.startsWith('Bearer ')
-      ? req.headers.authorization.slice(7)
-      : null;
-    const token = bearer || req.cookies.mindset_token;
-    if (!token) return res.status(401).json({message:'Chưa đăng nhập'});
-    req.user = jwt.verify(token, JWT_SECRET);
+      ? req.headers.authorization.slice(7) : null;
+    const token = bearer || req.cookies[SESSION_COOKIE];
+    const session = await findSession(token);
+    if (!session) return res.status(401).json({message:'Chưa đăng nhập'});
+    req.sessionToken = token;
+    req.sessionId = session.id;
+    req.user = { id:session.user_id, username:session.username, full_name:session.full_name, role:session.role };
     next();
-  } catch { return res.status(401).json({message:'Phiên đăng nhập đã hết hạn'}); }
+  } catch (e) {
+    console.error('Auth error:', e?.message || e);
+    return res.status(401).json({message:'Phiên đăng nhập không hợp lệ'});
+  }
 }
 function adminOnly(req,res,next){ if(!['admin','manager'].includes(req.user.role)) return res.status(403).json({message:'Chỉ quản lý hoặc admin tổng được phép'}); next(); }
 function payOSAdminOnly(req,res,next){ if(req.user.role!=='admin') return res.status(403).json({message:'Chỉ Admin tổng được phép thay đổi kênh thanh toán'}); next(); }
@@ -252,40 +307,40 @@ app.post('/api/auth/login', async (req,res)=>{
   const r=await q('SELECT * FROM users WHERE username=$1 AND active=true',[username]);
   if(!r.rowCount || !(await bcrypt.compare(password,r.rows[0].password_hash))) return res.status(401).json({message:'Sai tài khoản hoặc mật khẩu'});
   const u=r.rows[0];
-  const token = sign(u);
-  res.cookie('mindset_token',token,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',path:'/',maxAge:30*24*60*60*1000});
-  // Trả token thêm cho client để có phương án dự phòng khi reload.
-  res.json({token,user:{id:u.id,username:u.username,fullName:u.full_name,role:u.role}});
+  const sessionToken = await createSession(u.id);
+  setSessionCookie(res,sessionToken);
+  res.json({token:sessionToken,user:{id:u.id,username:u.username,fullName:u.full_name,role:u.role}});
 });
-app.post('/api/auth/logout',(req,res)=>{
-  res.clearCookie('mindset_token',{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',path:'/'});
+app.post('/api/auth/logout',async (req,res)=>{
+  const bearer = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null;
+  const token = bearer || req.cookies[SESSION_COOKIE];
+  try { await revokeSession(token); } catch {}
+  clearSessionCookie(res);
   res.json({ok:true});
 });
 
-// Gia hạn phiên khi người dùng F5 sau một thời gian dài. Chỉ chấp nhận JWT
-// được ký bằng đúng JWT_SECRET của server; token hết hạn vẫn phải có chữ ký hợp lệ.
+// Keep the refresh endpoint for compatibility with the existing frontend.
+// It now rotates the persistent Neon session instead of relying on JWT_SECRET.
 app.post('/api/auth/refresh',async(req,res)=>{
   try {
     const bearer = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null;
-    const token = bearer || req.cookies.mindset_token;
-    if (!token) return res.status(401).json({message:'Chưa đăng nhập'});
-    const payload = jwt.verify(token, JWT_SECRET, {ignoreExpiration:true});
-    const r = await q('SELECT id,username,full_name,role,active FROM users WHERE id=$1',[payload.id]);
-    if (!r.rowCount || !r.rows[0].active) return res.status(401).json({message:'Tài khoản không còn hoạt động'});
-    const u = r.rows[0];
-    const newToken = sign(u);
-    res.cookie('mindset_token',newToken,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',path:'/',maxAge:30*24*60*60*1000});
-    res.json({token:newToken,user:{id:u.id,username:u.username,fullName:u.full_name,role:u.role}});
+    const token = bearer || req.cookies[SESSION_COOKIE];
+    const session = await findSession(token);
+    if (!session) return res.status(401).json({message:'Phiên đăng nhập đã hết hạn'});
+    await revokeSession(token);
+    const newToken = await createSession(session.user_id);
+    setSessionCookie(res,newToken);
+    res.json({token:newToken,user:{id:session.user_id,username:session.username,fullName:session.full_name,role:session.role}});
   } catch {
     res.status(401).json({message:'Không thể khôi phục phiên đăng nhập'});
   }
 });
 
 app.get('/api/auth/me',auth,async(req,res)=>{
-  // Đọc lại user từ DB để role/trạng thái thay đổi có hiệu lực ngay cả khi JWT cũ còn hạn.
-  const r = await q('SELECT id,username,full_name,role,active FROM users WHERE id=$1',[req.user.id]);
-  if (!r.rowCount || !r.rows[0].active) return res.status(401).json({message:'Tài khoản không còn hoạt động'});
-  const u = r.rows[0];
+  // Read user from Neon on every boot/request so role and active status are current.
+  const r=await q('SELECT id,username,full_name,role,active FROM users WHERE id=$1',[req.user.id]);
+  if(!r.rowCount || !r.rows[0].active) return res.status(401).json({message:'Tài khoản không còn hoạt động'});
+  const u=r.rows[0];
   res.json({user:{id:u.id,username:u.username,fullName:u.full_name,role:u.role}});
 });
 

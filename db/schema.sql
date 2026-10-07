@@ -157,3 +157,15 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_link_id TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_reference TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_order_code ON orders(payment_order_code) WHERE payment_order_code IS NOT NULL;
+
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id BIGSERIAL PRIMARY KEY,
+  token_hash TEXT UNIQUE NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS auth_sessions_user_idx ON auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS auth_sessions_expires_idx ON auth_sessions(expires_at);

@@ -601,13 +601,12 @@ async function boot({ animate = false } = {}) {
   const savedUser = localStorage.getItem('mindset_auth_user');
 
   try {
-    // Luôn ưu tiên xác thực lại bằng token đã lưu. Cookie chỉ là lớp dự phòng.
+    // Xác thực lại bằng session cookie/token đã lưu. Session được lưu trong Neon nên Render restart không làm mất đăng nhập.
     const me = await api('/api/auth/me');
     state.user = me.user;
     localStorage.setItem('mindset_auth_user', JSON.stringify(me.user));
   } catch (e) {
-    // Nếu chưa có token thì chắc chắn đang ở màn hình login. Nếu có token mà
-    // server vừa restart/F5, thử gia hạn thêm một lần trước khi kết luận hết phiên.
+    // Nếu chưa có token thì thử cookie HttpOnly một lần nữa trước khi kết luận hết phiên.
     if (savedToken) {
       try {
         await refreshAuthToken();
@@ -616,8 +615,7 @@ async function boot({ animate = false } = {}) {
         localStorage.setItem('mindset_auth_user', JSON.stringify(me.user));
       } catch {}
     } else if (savedUser) {
-      // Không dùng dữ liệu localStorage để bỏ qua xác thực; chỉ giữ login screen.
-      // Điều này tránh trường hợp token bị xóa nhưng giao diện vẫn tưởng đã đăng nhập.
+      // Không bỏ qua xác thực chỉ dựa trên localStorage; server session vẫn là nguồn tin cậy.
     }
   }
 
