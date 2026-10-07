@@ -1677,3 +1677,41 @@ body.modal-open { overflow: hidden; }
   .table-card-modal{min-height:78px}
   #modalBox:has(.table-picker-modal){width:min(96vw,680px)}
 }
+
+/* Quản lý nhân viên: dữ liệu hiển thị bình thường, không in đậm */
+.staff-table tbody td,
+.employee-table tbody td,
+.staff-management tbody td {
+  font-weight: 400 !important;
+}
+.staff-table tbody td strong,
+.employee-table tbody td strong,
+.staff-management tbody td strong {
+  font-weight: 400 !important;
+}
+.staff-table tbody td b,
+.employee-table tbody td b,
+.staff-management tbody td b {
+  font-weight: 400 !important;
+}
+
+/* Trạng thái tài khoản */
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400 !important;
+}
+.status-indicator .status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 10px;
+}
+.status-indicator .status-dot.active {
+  background: #20a464;
+}
+.status-indicator .status-dot.locked {
+  background: #e5484d;
+}
