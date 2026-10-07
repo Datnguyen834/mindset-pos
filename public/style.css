@@ -1715,3 +1715,39 @@ body.modal-open { overflow: hidden; }
 .status-indicator .status-dot.locked {
   background: #e5484d;
 }
+
+/* ===== Header mới: logo Mindset ở giữa + menu quản trị trong hamburger ===== */
+.sidebar{display:none!important}
+.main{width:100%!important;margin:0!important}
+.topbar{position:relative;justify-content:space-between;padding:0 24px}
+.top-brand{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:9px;z-index:3;pointer-events:none}
+.top-brand img{width:44px;height:44px;object-fit:contain}
+.top-brand b{display:block;font-family:Georgia,serif;font-size:25px;font-style:italic;line-height:1}
+.top-brand span{display:block;font-size:8px;letter-spacing:1.25px;color:#718078;margin-top:3px;white-space:nowrap}
+.admin-menu-wrap{position:relative;display:flex;align-items:center}
+.hamburger-btn{width:42px;height:42px;border:1px solid #b9cbc2;background:#fff;color:#173b31;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer}
+.hamburger-btn span{display:block;width:19px;height:2px;background:currentColor;border-radius:2px}
+.hamburger-btn:hover{background:#eef4f0;border-color:#8eafa0}
+.admin-menu{position:absolute;right:0;top:50px;width:245px;background:#fff;border:1px solid var(--line);border-radius:13px;box-shadow:0 16px 38px rgba(0,0,0,.16);padding:8px;z-index:1000}
+.admin-menu nav{display:flex;flex-direction:column;gap:4px}
+.admin-menu .nav-item{margin:0;color:#27463c;padding:12px 13px;font-weight:700}
+.admin-menu .nav-item.active,.admin-menu .nav-item:hover{background:#315b4b;color:#fff}
+.cat-track{left:0!important;width:100vw!important}
+@media(max-width:900px){
+  .topbar{padding:0 10px}
+  .top-brand img{width:38px;height:38px}
+  .top-brand b{font-size:21px}
+  .top-brand span{font-size:7px}
+  .top-info{max-width:34%}
+  .top-info .welcome{font-size:12px}
+  .top-info small{font-size:10px}
+}
+@media(max-width:600px){
+  .top-brand{left:50%;}
+  .top-brand img{width:34px;height:34px}
+  .top-brand b{font-size:19px}
+  .top-brand span{display:none}
+  .top-actions{gap:6px}
+  .user-display{font-size:12px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .admin-menu{right:-4px;width:225px}
+}

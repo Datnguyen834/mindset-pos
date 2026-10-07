@@ -555,13 +555,27 @@ function memberTierInfo(spend) {
 }
 
 function nav() {
-  const admin = ['admin','manager'].includes(state.user.role);
-  const items = admin
+  const isManagerOrAdmin = ['admin','manager'].includes(state.user?.role);
+  const wrap = $('#adminMenuWrap');
+  if (wrap) wrap.classList.toggle('hidden', !isManagerOrAdmin);
+  const navEl = $('#nav');
+  if (!navEl) return;
+  const items = isManagerOrAdmin
     ? [['pos','☕','Menu'],['orders','▣','Doanh thu'],['users','♙','Quản lý nhân viên'],['members','👥','Quản lý thành viên'],['settings','⚙','Cài đặt']]
     : [['pos','☕','Menu']];
-  $('#nav').innerHTML = items.map(([p, icon, label]) =>
-    `<button class="nav-item ${state.page === p ? 'active' : ''}" onclick="go('${p}')"><span class="nav-icon">${icon}</span><span>${label}</span></button>`
+  navEl.innerHTML = items.map(([p, icon, label]) =>
+    `<button class="nav-item ${state.page === p ? 'active' : ''}" onclick="go('${p}');closeAdminMenu()"><span class="nav-icon">${icon}</span><span>${label}</span></button>`
   ).join('');
+}
+
+function toggleAdminMenu() {
+  const el = $('#adminMenu');
+  if (!el) return;
+  el.classList.toggle('hidden');
+}
+function closeAdminMenu() {
+  const el = $('#adminMenu');
+  if (el) el.classList.add('hidden');
 }
 
 function updateCatToggle() {
@@ -2495,5 +2509,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,toggleCatVisibility,selectOrderType,selectTable,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,searchMember,memberForm,saveMember,usePhysicalMemberCoupon,applyMemberCouponToCart,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,toggleAdminMenu,closeAdminMenu,toggleCatVisibility,selectOrderType,selectTable,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,searchMember,memberForm,saveMember,usePhysicalMemberCoupon,applyMemberCouponToCart,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();
