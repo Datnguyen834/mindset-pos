@@ -91,7 +91,7 @@ async function initDb() {
   const menuCount = await q('SELECT COUNT(*)::int AS n FROM menu_items');
   if (menuCount.rows[0].n === 0) {
     const items = [
-      ['Cà phê đen','Cà phê',25000,'ca-phe-den.jpg'],['Cà phê sữa','Cà phê',28000,'ca-phe-sua-tuoi.jpg'],['Americano','Cà phê',25000,'americano.jpg'],['Latte','Cà phê',35000,'latte.jpg'],['Cappuccino','Cà phê',35000,'cappuccino.jpg'],
+      ['Cà phê đen','Cà phê',25000,'ca-phe-den.jpg'],['Cà phê sữa','Cà phê',28000,'ca-phe-sua.jpg'],['Americano','Cà phê',25000,'americano.jpg'],['Latte','Cà phê',35000,'latte.jpg'],['Cappuccino','Cà phê',35000,'cappuccino.jpg'],
       ['Cold Brew','Cà phê',35000,'cold-brew.jpg'],['Bạc xỉu','Cà phê',32000,'bac-xiu.jpg'],['Matcha Latte','Trà',40000,'matcha-latte.jpg'],['Trà đào','Trà',35000,'tra-dao.jpg'],['Trà vải','Trà',35000,'tra-vai.jpg'],
       ['Trà ô long','Trà',30000,'tra-o-long.jpg'],['Trà lài','Trà',30000,'tra-lai.jpg'],['Chocolate','Khác',35000,'chocolate.jpg'],['Đá xay socola','Đá xay',45000,'da-xay-socola.jpg'],['Đá xay matcha','Đá xay',45000,'da-xay-matcha.jpg']
     ];
@@ -104,12 +104,12 @@ async function initDb() {
   // Add bakery category/products without duplicating existing data.
   await q(`INSERT INTO categories(name) VALUES('Bánh ngọt') ON CONFLICT(name) DO NOTHING`);
   const bakeryItems = [
-    ['Tiramisu','Bánh ngọt',45000,'tiramisu.png'],
-    ['Cheesecake','Bánh ngọt',45000,'cheesecake.png'],
-    ['Croissant','Bánh ngọt',30000,'croissant.jpg'],
+    ['Tiramisu','Bánh ngọt',45000,'tiramisu.svg'],
+    ['Cheesecake','Bánh ngọt',45000,'cheesecake.svg'],
+    ['Croissant','Bánh ngọt',30000,'croissant.svg'],
     ['Su kem','Bánh ngọt',28000,'su-kem.svg'],
-    ['Red Velvet','Bánh ngọt',42000,'red-velvet.png'],
-    ['Cookie chocolate','Bánh ngọt',22000,'cookie-chocolate-chip.png']
+    ['Red Velvet','Bánh ngọt',42000,'red-velvet.svg'],
+    ['Cookie chocolate','Bánh ngọt',22000,'cookie.svg']
   ];
   for (const [name,cat,price,file] of bakeryItems) {
     const exists = await q('SELECT id FROM menu_items WHERE name=$1 LIMIT 1',[name]);
@@ -206,6 +206,85 @@ async function initDb() {
       await q(`INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,NULL)`, [name, cat, price]);
     }
   }
+  // Sync local product images into the database on every server start.
+  // This is intentional: Render deploys the images from Git, while the POS
+  // serves image_data from Neon. Whenever an image file is replaced in Git,
+  // the matching Neon record is refreshed automatically without recreating
+  // menu items or touching orders/customers.
+  const imageMap = {
+    'Cà phê đen':'ca-phe-den.jpg',
+    'Cà phê sữa':'ca-phe-sua.jpg',
+    'Bạc xỉu':'bac-xiu.jpg',
+    'Cà phê sữa tươi':'ca-phe-sua-tuoi.jpg',
+    'Cà phê muối':'ca-phe-muoi.jpg',
+    'Cà phê cốt dừa':'ca-phe-sua-dua.jpg',
+    'Americano':'americano.jpg',
+    'Cappuccino':'cappuccino.jpg',
+    'Latte':'latte.jpg',
+    'Mocha':'mocha.jpg',
+    'Trà sữa truyền thống':'tra-sua-truyen-thong.jpg',
+    'Trà sữa socola':'tra-sua-socola.jpg',
+    'Trà sữa matcha':'tra-sua-matcha.jpg',
+    'Trà sữa khoai môn':'tra-sua-khoai-mon.jpg',
+    'Trà sữa caramel':'tra-sua-caramel.jpg',
+    'Trà sữa dâu':'tra-sua-dau.jpg',
+    'Trà sữa thái xanh':'tra-sua-thai-xanh.jpg',
+    'Trà sữa thái đỏ':'tra-sua-thai-do.jpg',
+    'Trà sữa kem cheese':'tra-sua-kem-cheese.jpg',
+    'Trà sữa trân châu đường đen':'tra-sua-tran-chau-duong-den.jpg',
+    'Trà đào cam sả':'tra-dao-cam-sa.jpg',
+    'Trà vải':'tra-vai.jpg',
+    'Trà dâu':'tra-dau.jpg',
+    'Trà tắc mật ong':'tra-tac-mat-ong.jpg',
+    'Trà chanh':'tra-chanh.jpg',
+    'Trà tắc xí muội':'tra-tac-xi-muoi.jpg',
+    'Trà nhiệt đới':'tra-nhiet-doi.jpg',
+    'Trà ô long đào':'tra-o-long-dao-mindset.png',
+    'Sinh tố bơ':null,
+    'Sinh tố xoài':null,
+    'Sinh tố dâu':null,
+    'Sinh tố mãng cầu':null,
+    'Sinh tố chuối':null,
+    'Sinh tố việt quất':null,
+    'Sinh tố mix trái cây':null,
+    'Nước ép cam':null,
+    'Nước ép dưa hấu':null,
+    'Nước ép dứa':null,
+    'Nước ép táo':null,
+    'Nước ép cà rốt':null,
+    'Nước ép ổi':null,
+    'Nước ép chanh dây':null,
+    'Nước ép mix':null,
+    'Đá xay chocolate':'da-xay-socola.png',
+    'Đá xay cookies':'da-xay-cookies.png',
+    'Đá xay matcha':'da-xay-matcha.png',
+    'Đá xay caramel':'da-xay-caramel.png',
+    'Đá xay dâu':'da-xay-dau.png',
+    'Đá xay xoài':'da-xay-xoai.png',
+    'Đá xay cà phê':'da-xay-ca-phe.png',
+    'Đá xay oreo':'da-xay-oreo.png',
+    'Bánh tiramisu':'tiramisu.png',
+    'Bánh cheesecake':'cheesecake.png',
+    'Bánh red velvet':'red-velvet.png',
+    'Bánh chocolate':'banh-chocolate.png',
+    'Bánh matcha':'matcha-cake.png',
+    'Bánh bông lan trứng muối':'bong-lan-trung-muoi.jpg',
+    'Croissant':'croissant.jpg',
+    'Croissant chocolate':'croissant-chocolate.png',
+    'Cookie chocolate chip':'cookie-chocolate-chip.png',
+    'Brownie':'brownie.png'
+  };
+  const mimeByExt = { '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.svg':'image/svg+xml', '.webp':'image/webp' };
+  for (const [name, file] of Object.entries(imageMap)) {
+    if (!file) continue;
+    const p = path.join(__dirname, 'public/assets/menu', file);
+    if (!fs.existsSync(p)) continue;
+    const ext = path.extname(file).toLowerCase();
+    const mime = mimeByExt[ext] || 'application/octet-stream';
+    const data = `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`;
+    await q(`UPDATE menu_items SET image_data=$1, updated_at=NOW() WHERE LOWER(TRIM(name))=LOWER(TRIM($2))`, [data, name]);
+  }
+
   await q(`INSERT INTO settings(key,value) VALUES('discount_rules','[]') ON CONFLICT(key) DO NOTHING`);
 }
 
