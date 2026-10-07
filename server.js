@@ -130,6 +130,12 @@ async function initDb() {
   await q(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_path TEXT`);
   await q(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_blob BYTEA`);
   await q(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_mime TEXT`);
+  // Order service/table fields must exist even when upgrading an older Neon database.
+  await q(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type VARCHAR(20)`);
+  await q(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_number INTEGER`);
+  await q(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_note VARCHAR(300) NOT NULL DEFAULT ''`);
+  await q(`UPDATE orders SET order_note='' WHERE order_note IS NULL`);
+
   // Persistent login sessions live in Neon, so a Render restart/deploy cannot
   // invalidate a user's login merely because the process restarted.
   await q(`CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -543,7 +549,7 @@ app.post('/api/orders',auth,async(req,res)=>{
 
     // Tiền mặt được hoàn tất ngay. Chuyển khoản phải chờ payOS xác nhận webhook.
     const initialStatus = (paymentMethod === 'transfer' && total > 0) ? 'pending' : 'paid';
-    const order=await client.query(`INSERT INTO orders(user_id,shift_id,customer_id,payment_method,order_type,table_number,order_note,subtotal,discount,automatic_discount,points_discount,points_used,points_earned,member_reward_id,member_reward_quantity,member_reward_discount,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,[req.user.id,shiftId,customer?.id || null,paymentMethod,orderType,orderType==='dine_in'?Number(tableNumber):null,safeOrderNote,subtotal,automaticDiscount+pointsDiscount+memberCouponDiscount,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,memberReward?.id || null,memberCouponQty,memberCouponDiscount,total,initialStatus]);
+    const order=await client.query(`INSERT INTO orders(user_id,shift_id,customer_id,payment_method,order_type,table_number,order_note,subtotal,discount,automatic_discount,points_discount,points_used,points_earned,member_reward_id,member_reward_quantity,member_reward_discount,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,[req.user.id,shiftId,customer?.id || null,paymentMethod,orderType,orderType==='dine_in'?Number(tableNumber):null,safeOrderNote,subtotal,automaticDiscount+pointsDiscount+memberCouponDiscount,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,memberReward?.id || null,memberCouponQty,memberCouponDiscount,total,initialStatus]);
     for(const x of normalized){
       const oi=await client.query(`INSERT INTO order_items(order_id,menu_item_id,item_name,unit_price,quantity,line_total,sugar_percent,ice_percent) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[order.rows[0].id,x.m.id,x.m.name,x.m.price,x.qty,x.line,x.sugarPercent,x.icePercent]);
       for(const t of x.tops) await client.query(`INSERT INTO order_item_toppings(order_item_id,topping_id,topping_name,topping_price,quantity) VALUES($1,$2,$3,$4,$5)`,[oi.rows[0].id,t.id,t.name,t.price,t.quantity]);
@@ -698,7 +704,45 @@ app.get('/api/admin/users',auth,adminOnly,async(req,res)=>{
   res.json(r.rows);
 });
 app.post('/api/admin/users',auth,adminOnly,async(req,res)=>{const {username,password,fullName,role='staff',birthDate}=req.body;if(!username||!password||!fullName||!birthDate)return res.status(400).json({message:'Vui lòng nhập đầy đủ tài khoản, mật khẩu, họ tên và ngày tháng năm sinh'});if(!['manager','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});if(!/^\d{4}-\d{2}-\d{2}$/.test(String(birthDate)))return res.status(400).json({message:'Ngày tháng năm sinh không hợp lệ'});try{const h=await bcrypt.hash(password,10);const r=await q('INSERT INTO users(username,password_hash,full_name,birth_date,role) VALUES($1,$2,$3,$4,$5) RETURNING id,username,full_name AS "fullName",birth_date AS "birthDate",role,active',[username,h,fullName,birthDate,role]);res.json(r.rows[0]);}catch(e){res.status(400).json({message:'Username đã tồn tại'});}});
-app.put('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{const target=await q('SELECT id,username,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].username==='admin')return res.status(403).json({message:'Tài khoản quản trị gốc không thể chỉnh sửa'});if(req.user.role==='manager' && target.rows[0].role!=='staff')return res.status(403).json({message:'Quản lý chỉ được chỉnh sửa tài khoản nhân viên'});const {fullName,password,role,active,birthDate}=req.body;const sets=[];const vals=[];if(fullName!==undefined){vals.push(fullName);sets.push(`full_name=$${vals.length}`)}if(birthDate!==undefined){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(birthDate)))return res.status(400).json({message:'Ngày tháng năm sinh không hợp lệ'});vals.push(birthDate);sets.push(`birth_date=$${vals.length}`)}if(role!==undefined){if(!['manager','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});vals.push(role);sets.push(`role=$${vals.length}`)}if(active!==undefined){vals.push(!!active);sets.push(`active=$${vals.length}`)}if(password){vals.push(await bcrypt.hash(password,10));sets.push(`password_hash=$${vals.length}`)}if(!sets.length)return res.json({ok:true});vals.push(req.params.id);const r=await q(`UPDATE users SET ${sets.join(',')} WHERE id=$${vals.length} RETURNING id,username,full_name AS "fullName",birth_date AS "birthDate",role,active`,vals);res.json(r.rows[0]);});
+app.put('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{
+  const target=await q('SELECT id,username,role FROM users WHERE id=$1',[req.params.id]);
+  if(!target.rowCount) return res.status(404).json({message:'Không tìm thấy tài khoản'});
+
+  // Root admin is permanently protected.
+  if(target.rows[0].username==='admin')
+    return res.status(403).json({message:'Tài khoản quản trị gốc không thể chỉnh sửa'});
+
+  // Only Admin tổng can change roles. Manager may edit staff details, but cannot
+  // promote/demote accounts or edit manager accounts.
+  if(req.user.role==='manager' && target.rows[0].role!=='staff')
+    return res.status(403).json({message:'Quản lý chỉ được chỉnh sửa tài khoản nhân viên'});
+  if(req.user.role!=='admin' && req.body.role!==undefined)
+    return res.status(403).json({message:'Chỉ Admin tổng mới được thay đổi quyền tài khoản'});
+  if(req.user.role!=='admin' && req.body.active!==undefined)
+    return res.status(403).json({message:'Chỉ Admin tổng mới được khóa/mở tài khoản'});
+
+  const {fullName,password,role,active,birthDate}=req.body;
+  const sets=[]; const vals=[];
+  if(fullName!==undefined){vals.push(String(fullName).trim());sets.push(`full_name=$${vals.length}`)}
+  if(birthDate!==undefined){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(birthDate))) return res.status(400).json({message:'Ngày tháng năm sinh không hợp lệ'});
+    vals.push(birthDate);sets.push(`birth_date=$${vals.length}`)
+  }
+  if(role!==undefined){
+    if(req.user.role!=='admin') return res.status(403).json({message:'Chỉ Admin tổng mới được thay đổi quyền tài khoản'});
+    if(!['manager','staff'].includes(role)) return res.status(400).json({message:'Role không hợp lệ'});
+    vals.push(role);sets.push(`role=$${vals.length}`)
+  }
+  if(active!==undefined){
+    if(req.user.role!=='admin') return res.status(403).json({message:'Chỉ Admin tổng mới được khóa/mở tài khoản'});
+    vals.push(!!active);sets.push(`active=$${vals.length}`)
+  }
+  if(password){vals.push(await bcrypt.hash(password,10));sets.push(`password_hash=$${vals.length}`)}
+  if(!sets.length)return res.json({ok:true});
+  vals.push(req.params.id);
+  const r=await q(`UPDATE users SET ${sets.join(',')} WHERE id=$${vals.length} RETURNING id,username,full_name AS "fullName",birth_date AS "birthDate",role,active`,vals);
+  res.json(r.rows[0]);
+});
 app.delete('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{if(Number(req.params.id)===req.user.id)return res.status(400).json({message:'Không thể xóa tài khoản đang đăng nhập'});const target=await q('SELECT id,username,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].username==='admin')return res.status(403).json({message:'Tài khoản quản trị gốc không thể xóa'});if(req.user.role==='manager' && target.rows[0].role!=='staff')return res.status(403).json({message:'Quản lý chỉ được xóa tài khoản nhân viên'});const r=await q('DELETE FROM users WHERE id=$1 RETURNING id,username',[req.params.id]);res.json({ok:true,user:r.rows[0]});});
 
 app.post('/api/admin/menu',auth,adminOnly,upload.single('image'),async(req,res)=>{
