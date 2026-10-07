@@ -184,6 +184,24 @@ async function initDb() {
   if (topCount.rows[0].n === 0) {
     await q(`INSERT INTO toppings(name,price) VALUES ('Trân châu',5000),('Thạch',5000),('Kem cheese',8000),('Shot espresso',10000),('Sữa tươi',5000)`);
   }
+  // Remove retired categories/products: Sinh tố and Nước ép.
+  // Historical order_items are preserved; referenced products are only deactivated.
+  await q(`
+    UPDATE menu_items
+    SET active=FALSE, updated_at=NOW()
+    WHERE LOWER(TRIM(category)) IN ('sinh tố','nước ép')
+  `);
+  await q(`
+    DELETE FROM menu_items m
+    WHERE LOWER(TRIM(m.category)) IN ('sinh tố','nước ép')
+      AND NOT EXISTS (
+        SELECT 1 FROM order_items oi WHERE oi.menu_item_id = m.id
+      )
+  `);
+  await q(`
+    DELETE FROM categories
+    WHERE LOWER(TRIM(name)) IN ('sinh tố','nước ép')
+  `);
   // Full menu from MENU QUÁN.docx: keep categories and prices in sync.
   const fullMenu = [
     // Cà phê
@@ -217,23 +235,6 @@ async function initDb() {
     ['Trà tắc xí muội','Trà',30000],
     ['Trà nhiệt đới','Trà',35000],
     ['Trà ô long đào','Trà',35000],
-    // Sinh tố
-    ['Sinh tố bơ','Sinh tố',38000],
-    ['Sinh tố xoài','Sinh tố',35000],
-    ['Sinh tố dâu','Sinh tố',38000],
-    ['Sinh tố mãng cầu','Sinh tố',38000],
-    ['Sinh tố chuối','Sinh tố',32000],
-    ['Sinh tố việt quất','Sinh tố',40000],
-    ['Sinh tố mix trái cây','Sinh tố',42000],
-    // Nước ép
-    ['Nước ép cam','Nước ép',35000],
-    ['Nước ép dưa hấu','Nước ép',30000],
-    ['Nước ép dứa','Nước ép',32000],
-    ['Nước ép táo','Nước ép',38000],
-    ['Nước ép cà rốt','Nước ép',30000],
-    ['Nước ép ổi','Nước ép',32000],
-    ['Nước ép chanh dây','Nước ép',32000],
-    ['Nước ép mix','Nước ép',40000],
     // Đá xay
     ['Đá xay chocolate','Đá xay',40000],
     ['Đá xay cookies','Đá xay',42000],
