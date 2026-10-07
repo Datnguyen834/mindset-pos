@@ -25,9 +25,11 @@ let state = {
 const money = (n) => new Intl.NumberFormat('vi-VN').format(Number(n) || 0) + 'đ';
 
 
-// ==================== MÈO TOM TƯƠNG TÁC TRÊN HEADER ====================
-// Tom sprite sheet: 10 cột x 7 hàng, 1 hàng = 1 hành động, 10 frame/hành động.
-// Thứ tự hàng: walk, confused, groom, sleep, stretch, angry, ball.
+// ==================== MÈO TƯƠNG TÁC TRÊN HEADER ====================
+// Sprite sheet: 384x288 = 12 cột x 9 hàng, mỗi frame gốc 32x32.
+// Các hàng trong asset được giữ nguyên để có thể dùng nhiều hành động:
+// 0 idle, 1 walk, 2-3 run/fast movement, 4 lie/sleep,
+// 5 sit/stand, 6 crouch/low walk, 7 play với bóng len, 8 leap/jump.
 let catController = null;
 
 function initInteractiveCat() {
@@ -35,38 +37,30 @@ function initInteractiveCat() {
   const cat = $('#movingCat');
   if (!track || !cat || catController) return;
 
+  // Sprite sheet 384x288: 12 cột x 9 hàng, mỗi frame 32x32.
+  // Khi hiển thị, mỗi frame được phóng lên 80x80 để nhìn rõ hơn.
   const W = 80;
-  const COLS = 10;
-  const ROWS = 7;
-  const FRAME_MS = 95;
+  const COLS = 12;
+  const FRAME_MS = 105;
   const WALK_SPEED = 58;
 
-  const row = (r) => Array.from({ length: 10 }, (_, i) => [i, r]);
+  const row = (r, count = 12, start = 0) =>
+    Array.from({ length: count }, (_, i) => [start + i, r]);
+
+  // Các hàng animation lấy trực tiếp từ sprite sheet bạn gửi.
   const ANIM = {
-    walk: row(0),
-    confused: row(1),
-    groom: row(2),
-    sleep: row(3),
-    stretch: row(4),
-    angry: row(5),
-    ball: row(6)
+    idle: row(0, 9),
+    walk: row(1, 11),
+    run: [...row(2, 12), ...row(3, 6)],
+    crawl: row(4, 10),
+    sit: row(5, 10),
+    idle2: row(6, 10),
+    play: row(7, 11),
+    jump: row(8, 6),
   };
 
-  let x = 0, y = 0;
-  let dirX = 1, dirY = 0;
-  let mode = 'walk';
-  let framePos = 0;
-  let lastTime = performance.now();
-  let lastFrameTime = lastTime;
-  let directionTimer = null;
-  let actionTimer = null;
-  let randomTimer = null;
-  let reactionToken = 0;
-  let dragging = false;
-  let didDrag = false;
-  let dragOffsetX = 0, dragOffsetY = 0;
-  let clickCount = 0;
-
+  // Sinh mèo ở một vị trí ngẫu nhiên trong vùng trắng ngay từ lúc khởi tạo.
+  // Chừa một khoảng nhỏ quanh mép để mèo không bị dính góc màn hình.
   function randomSpawnPosition() {
     const maxX = Math.max(0, track.clientWidth - W);
     const maxY = Math.max(0, track.clientHeight - W);
@@ -76,25 +70,31 @@ function initInteractiveCat() {
     y = padY + Math.random() * Math.max(1, maxY - padY * 2);
   }
 
+  let x = 0;
+  let y = 0;
+  randomSpawnPosition();
+  // 8 hướng rõ ràng: trái, phải, lên, xuống và 4 đường chéo.
+  // Tốc độ được chuẩn hóa để đi chéo không nhanh hơn đi thẳng.
   const DIRECTIONS = [
-    [1,0],[-1,0],[0,1],[0,-1],
-    [.707,.707],[.707,-.707],[-.707,.707],[-.707,-.707]
+    [ 1, 0], [-1, 0], [0, 1], [0,-1],
+    [ .707, .707], [ .707,-.707], [-.707, .707], [-.707,-.707]
   ];
-
-  function setDirectionClass() {
-    cat.classList.toggle('face-left', dirX < 0);
-  }
+  let dirX = 1;
+  let dirY = 0;
+  let directionTimer = null;
 
   function chooseDirection(preferred = null) {
     let candidates = DIRECTIONS;
     if (preferred) {
-      candidates = DIRECTIONS.filter(([dx,dy]) =>
-        (preferred.x === 0 || Math.sign(dx) === preferred.x) &&
-        (preferred.y === 0 || Math.sign(dy) === preferred.y)
-      );
+      candidates = DIRECTIONS.filter(([dx,dy]) => {
+        return (preferred.x === 0 || Math.sign(dx) === preferred.x) &&
+               (preferred.y === 0 || Math.sign(dy) === preferred.y);
+      });
       if (!candidates.length) candidates = DIRECTIONS;
     }
-    [dirX, dirY] = candidates[Math.floor(Math.random() * candidates.length)];
+    const [dx, dy] = candidates[Math.floor(Math.random() * candidates.length)];
+    dirX = dx;
+    dirY = dy;
     setDirectionClass();
   }
 
@@ -103,33 +103,52 @@ function initInteractiveCat() {
     directionTimer = setTimeout(() => {
       chooseDirection();
       scheduleDirectionChange();
-    }, 2600 + Math.random() * 3600);
+    }, 2800 + Math.random() * 3200);
   }
 
   function clearDirectionTimer() {
-    if (directionTimer) clearTimeout(directionTimer);
-    directionTimer = null;
+    if (directionTimer) {
+      clearTimeout(directionTimer);
+      directionTimer = null;
+    }
   }
 
-  function setFrame(frame) {
-    const [col, r] = frame;
-    cat.style.backgroundPosition = `${-(col * W)}px ${-(r * W)}px`;
-    cat.style.backgroundSize = `${COLS * W}px ${ROWS * W}px`;
-  }
-
-  function nextFrame(now) {
-    if (now - lastFrameTime < FRAME_MS) return;
-    lastFrameTime = now;
-    const frames = ANIM[mode] || ANIM.walk;
-    framePos = (framePos + 1) % frames.length;
-    setFrame(frames[framePos]);
-  }
+  let mode = 'walk';
+  let framePos = 0;
+  let lastTime = performance.now();
+  let lastFrameTime = lastTime;
+  let reactionToken = 0;
+  let actionTimer = null;
+  let randomTimer = null;
+  let dragging = false;
+  let didDrag = false;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+  let clickCount = 0;
 
   function bounds() {
     return {
       maxX: Math.max(0, track.clientWidth - W),
       maxY: Math.max(0, track.clientHeight - W)
     };
+  }
+
+  function setDirectionClass() {
+    cat.classList.toggle('face-left', dirX < 0);
+  }
+
+  function setFrame(frame) {
+    const [col, r] = frame;
+    cat.style.backgroundPosition = `${-(col * W)}px ${-(r * W)}px`;
+    cat.style.backgroundSize = `${COLS * W}px ${9 * W}px`;
+  }
+
+  function nextFrame(now) {
+    if (now - lastFrameTime < FRAME_MS) return;
+    lastFrameTime = now;
+    const frames = ANIM[mode] || ANIM.idle;
+    framePos = (framePos + 1) % frames.length;
+    setFrame(frames[framePos]);
   }
 
   function renderPosition() {
@@ -141,13 +160,17 @@ function initInteractiveCat() {
   }
 
   function clearActionTimer() {
-    if (actionTimer) clearTimeout(actionTimer);
-    actionTimer = null;
+    if (actionTimer) {
+      clearTimeout(actionTimer);
+      actionTimer = null;
+    }
   }
 
   function clearRandomTimer() {
-    if (randomTimer) clearTimeout(randomTimer);
-    randomTimer = null;
+    if (randomTimer) {
+      clearTimeout(randomTimer);
+      randomTimer = null;
+    }
   }
 
   function resumeWalk() {
@@ -155,13 +178,13 @@ function initInteractiveCat() {
     framePos = 0;
     cat.classList.remove('reacting', 'dragging');
     lastFrameTime = performance.now();
-    setFrame(ANIM.walk[0]);
     chooseDirection();
+    setFrame(ANIM.walk[0]);
     scheduleDirectionChange();
     scheduleRandomAction();
   }
 
-  function playAction(name, duration = 1800, fromClick = false) {
+  function playAction(name, duration = 1000, fromClick = false) {
     clearActionTimer();
     clearRandomTimer();
     reactionToken++;
@@ -178,39 +201,71 @@ function initInteractiveCat() {
       mode = 'walk';
       framePos = 0;
       lastFrameTime = performance.now();
+      setDirectionClass();
       setFrame(ANIM.walk[0]);
       actionTimer = null;
       scheduleRandomAction();
     }, duration);
   }
 
+  function runAction(duration = 1200) {
+    clearActionTimer();
+    clearRandomTimer();
+    reactionToken++;
+    const token = reactionToken;
+    mode = 'run';
+    framePos = 0;
+    lastFrameTime = performance.now();
+    cat.classList.add('reacting');
+    setFrame(ANIM.run[0]);
+    const started = performance.now();
+
+    function runLoop(now) {
+      if (token !== reactionToken || dragging || mode !== 'run') return;
+      const dt = Math.min(40, now - lastTime);
+      const b = bounds();
+      x += dirX * 145 * dt / 1000;
+      y += dirY * 145 * dt / 1000;
+      if (x >= b.maxX) { x = b.maxX; dirX = -Math.abs(dirX || 1); setDirectionClass(); }
+      else if (x <= 0) { x = 0; dirX = Math.abs(dirX || 1); setDirectionClass(); }
+      if (y >= b.maxY) { y = b.maxY; dirY = -Math.abs(dirY || 1); }
+      else if (y <= 0) { y = 0; dirY = Math.abs(dirY || 1); }
+      renderPosition();
+      nextFrame(now);
+      if (now - started < duration) requestAnimationFrame(runLoop);
+      else resumeWalk();
+    }
+    requestAnimationFrame(runLoop);
+  }
+
   function randomAction() {
     if (dragging) return scheduleRandomAction();
     const actions = [
-      ['confused', 2400],
-      ['groom', 2800],
-      ['sleep', 4200],
-      ['stretch', 2600],
-      ['angry', 2200],
-      ['ball', 3600]
+      ['idle', 3200], ['sit', 4200], ['crawl', 3000],
+      ['idle2', 3500], ['play', 5200], ['jump', 2200], ['run', 4200]
     ];
     const [action, duration] = actions[Math.floor(Math.random() * actions.length)];
-    playAction(action, duration, false);
+    if (action === 'run') runAction(duration);
+    else playAction(action, duration, false);
   }
 
   function scheduleRandomAction() {
     clearRandomTimer();
-    randomTimer = setTimeout(randomAction, 5000 + Math.random() * 7000);
+    randomTimer = setTimeout(() => {
+      randomAction();
+    }, 4500 + Math.random() * 7500);
   }
 
   function react() {
     clickCount++;
     const reactions = [
-      ['confused', 2400], ['groom', 2800], ['stretch', 2600],
-      ['ball', 3600], ['angry', 2200], ['sleep', 4200]
+      ['jump', 2400], ['play', 5200], ['sit', 4200],
+      ['crawl', 3200], ['idle2', 3500], ['run', 4500]
     ];
     const [action, duration] = reactions[(clickCount - 1) % reactions.length];
-    playAction(action, duration, true);
+    cat.classList.add('reacting');
+    if (action === 'run') runAction(duration);
+    else playAction(action, duration, true);
   }
 
   function pointerDown(e) {
@@ -221,7 +276,7 @@ function initInteractiveCat() {
     reactionToken++;
     dragging = true;
     didDrag = false;
-    mode = 'walk';
+    mode = 'drag';
     cat.classList.add('dragging');
     const r = cat.getBoundingClientRect();
     dragOffsetX = e.clientX - r.left;
@@ -239,10 +294,10 @@ function initInteractiveCat() {
     if (Math.abs(nx - x) + Math.abs(ny - y) > 5) didDrag = true;
     x = Math.max(0, Math.min(b.maxX, nx));
     y = Math.max(0, Math.min(b.maxY, ny));
-    if (Math.abs(e.movementX || 0) > .5) dirX = e.movementX < 0 ? -1 : 1;
+    if (Math.abs(e.movementX || 0) > 0.5) dirX = e.movementX < 0 ? -1 : 1;
     setDirectionClass();
     framePos = 0;
-    setFrame(ANIM.walk[0]);
+    setFrame(ANIM.idle[0]);
     renderPosition();
   }
 
@@ -256,8 +311,12 @@ function initInteractiveCat() {
     chooseDirection();
     scheduleDirectionChange();
     setFrame(ANIM.walk[0]);
-    if (!didDrag) react();
-    setTimeout(() => { didDrag = false; }, 0);
+    if (didDrag) {
+      // Không coi thao tác kéo là một cú click.
+      setTimeout(() => { didDrag = false; }, 0);
+    } else {
+      react();
+    }
     scheduleRandomAction();
   }
 
@@ -268,17 +327,25 @@ function initInteractiveCat() {
   cat.addEventListener('dragstart', e => e.preventDefault());
 
   catController = {
-    stop() { mode = 'walk'; clearActionTimer(); clearRandomTimer(); clearDirectionTimer(); },
+    stop() { mode = 'idle'; clearActionTimer(); clearRandomTimer(); clearDirectionTimer(); },
     react,
     randomSpawn() {
-      clearActionTimer(); clearRandomTimer(); reactionToken++;
-      dragging = false; mode = 'walk'; randomSpawnPosition(); chooseDirection();
-      framePos = 0; lastFrameTime = performance.now(); setFrame(ANIM.walk[0]);
-      renderPosition(); scheduleDirectionChange(); scheduleRandomAction();
+      clearActionTimer();
+      clearRandomTimer();
+      reactionToken++;
+      dragging = false;
+      mode = 'walk';
+      randomSpawnPosition();
+      chooseDirection();
+      framePos = 0;
+      lastFrameTime = performance.now();
+      setFrame(ANIM.walk[0]);
+      renderPosition();
+      scheduleDirectionChange();
+      scheduleRandomAction();
     }
   };
 
-  randomSpawnPosition();
   chooseDirection();
   setFrame(ANIM.walk[0]);
   renderPosition();
@@ -288,20 +355,38 @@ function initInteractiveCat() {
   function loop(now) {
     const dt = Math.min(40, now - lastTime);
     lastTime = now;
+
     if (!dragging && mode === 'walk') {
       const b = bounds();
+      // Giữ đúng vector hướng: 8 hướng, gồm cả đi chéo rõ ràng.
       x += dirX * WALK_SPEED * dt / 1000;
       y += dirY * WALK_SPEED * dt / 1000;
-      if (x >= b.maxX) { x = b.maxX; dirX = -Math.abs(dirX || 1); setDirectionClass(); }
-      else if (x <= 0) { x = 0; dirX = Math.abs(dirX || 1); setDirectionClass(); }
-      if (y >= b.maxY) { y = b.maxY; dirY = -Math.abs(dirY || 1); }
-      else if (y <= 0) { y = 0; dirY = Math.abs(dirY || 1); }
+
+      if (x >= b.maxX) {
+        x = b.maxX;
+        dirX = -Math.abs(dirX || 1);
+        setDirectionClass();
+      } else if (x <= 0) {
+        x = 0;
+        dirX = Math.abs(dirX || 1);
+        setDirectionClass();
+      }
+
+      if (y >= b.maxY) {
+        y = b.maxY;
+        dirY = -Math.abs(dirY || 1);
+      } else if (y <= 0) {
+        y = 0;
+        dirY = Math.abs(dirY || 1);
+      }
+
       renderPosition();
       nextFrame(now);
-    } else if (!dragging) {
+    } else if (!dragging && mode !== 'run') {
       nextFrame(now);
       renderPosition();
     }
+
     requestAnimationFrame(loop);
   }
 
