@@ -1751,3 +1751,143 @@ body.modal-open { overflow: hidden; }
   .user-display{font-size:12px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .admin-menu{right:-4px;width:225px}
 }
+
+/* ===== POS: giữ 5 cột món + mở rộng và cân đối khung Đơn hàng ===== */
+@media (min-width:901px){
+  #page.pos-page .pos-layout{
+    grid-template-columns:minmax(0,1fr) 440px !important;
+    gap:20px !important;
+  }
+  #page.pos-page .menu-grid{
+    grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+    gap:14px !important;
+  }
+  #page.pos-page .cart{
+    width:auto !important;
+    min-width:0 !important;
+    padding:20px !important;
+    border-radius:14px;
+  }
+}
+
+#page.pos-page .cart-head{
+  min-height:42px;
+  margin-bottom:8px;
+}
+#page.pos-page .cart h2{font-size:23px;letter-spacing:-.2px}
+#page.pos-page .cart-head small{font-size:12px;margin-top:3px;display:block}
+#page.pos-page .cart-head .btn.small{
+  min-width:52px;
+  min-height:36px;
+  border-radius:9px;
+}
+#page.pos-page .customer-cart-btn{
+  width:100%;
+  min-height:54px;
+  padding:0 14px;
+  margin:4px 0 10px;
+  border:1px solid #d8e1dc;
+  border-radius:11px;
+  background:#fafcfb;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  font-size:14px;
+}
+#page.pos-page .customer-cart-btn b{font-size:12px;color:#53615a}
+#page.pos-page .cart-items{margin-top:2px;padding-right:3px}
+#page.pos-page .cart-row{
+  grid-template-columns:56px minmax(0,1fr) auto;
+  gap:11px;
+  padding:13px 0;
+}
+#page.pos-page .cart-row img{width:56px;height:56px;border-radius:9px}
+#page.pos-page .cart-row strong{font-size:14px}
+#page.pos-page .qty{gap:6px;margin-top:8px}
+#page.pos-page .qty button{width:28px;height:28px;min-width:28px;border-radius:7px}
+#page.pos-page .qty .btn.small{width:112px;min-width:112px;height:32px;border-radius:8px}
+#page.pos-page .cart-total{
+  padding-top:14px;
+  margin-top:10px;
+}
+#page.pos-page .total-line{margin:8px 0;font-size:14px}
+#page.pos-page .total-line.big{
+  margin:14px 0 10px;
+  padding-top:12px;
+  border-top:1px solid #e7ece9;
+  font-size:22px;
+}
+#page.pos-page .payment-choice{
+  margin:12px 0 10px;
+  padding:14px;
+  border:1px solid #dfe7e3;
+  border-radius:12px;
+  background:#fbfcfb;
+}
+#page.pos-page .order-service-box{
+  margin:0 0 14px;
+  padding:0 0 14px;
+  border-bottom:1px solid #e5ebe7;
+}
+#page.pos-page .payment-label{
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:.01em;
+  margin-bottom:8px;
+}
+#page.pos-page .order-type-options,
+#page.pos-page .payment-options{gap:10px}
+#page.pos-page .payment-option{
+  min-height:46px;
+  padding:10px 12px;
+  border-radius:9px;
+  font-size:13px;
+}
+#page.pos-page .selected-table-summary{
+  min-height:44px;
+  margin-top:9px;
+  padding:7px 9px 7px 11px;
+  border-radius:9px;
+  background:#f4f8f6;
+}
+#page.pos-page .selected-table-summary .btn.small{
+  min-height:32px;
+  padding:6px 10px;
+}
+#page.pos-page .order-note-label textarea{
+  min-height:58px;
+  padding:10px 11px;
+  border-radius:9px;
+  background:#fff;
+}
+#page.pos-page .payment-main{
+  min-height:54px;
+  margin-top:10px;
+  border-radius:10px;
+  font-size:15px;
+  font-weight:850;
+}
+#page.pos-page .discount-breakdown{margin-top:-2px}
+#page.pos-page .discount-subline{font-size:12px}
+
+@media (min-width:901px) and (max-width:1250px){
+  #page.pos-page .pos-layout{grid-template-columns:minmax(0,1fr) 400px !important}
+  #page.pos-page .menu-grid{gap:10px !important}
+}
+
+/* hamburger-left-override: menu button on the left side of the header */
+.hamburger-btn,
+.menu-toggle,
+.header-menu-btn,
+.topbar-menu-btn {
+  order: -10 !important;
+  margin-left: 0 !important;
+  margin-right: auto !important;
+}
+.topbar,
+.header,
+.app-header,
+.header-bar {
+  position: relative;
+}
