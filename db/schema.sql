@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS orders (
   shift_id INTEGER REFERENCES shifts(id),
   customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
   payment_method VARCHAR(20) NOT NULL CHECK (payment_method IN ('cash','transfer')),
+  order_type VARCHAR(20) NOT NULL DEFAULT 'dine_in',
+  order_note VARCHAR(300) NOT NULL DEFAULT '',
   subtotal INTEGER NOT NULL DEFAULT 0,
   discount INTEGER NOT NULL DEFAULT 0,
   automatic_discount INTEGER NOT NULL DEFAULT 0,
@@ -142,6 +144,10 @@ ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_user_id_fkey;
 ALTER TABLE orders ADD CONSTRAINT orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
 
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type VARCHAR(20) NOT NULL DEFAULT 'dine_in';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_note VARCHAR(300) NOT NULL DEFAULT '';
+UPDATE orders SET order_type='dine_in' WHERE order_type IS NULL;
+UPDATE orders SET order_note='' WHERE order_note IS NULL;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS automatic_discount INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS points_discount INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS points_used INTEGER NOT NULL DEFAULT 0;

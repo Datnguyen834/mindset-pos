@@ -458,9 +458,11 @@ app.post('/api/customers/:id/reward/use', auth, async (req,res)=>{
 });
 
 app.post('/api/orders',auth,async(req,res)=>{
-  const {items,paymentMethod,customerId=null,redeemPoints=false,memberRewardId=null,memberRewardQuantity=0}=req.body;
+  const {items,paymentMethod,orderType='dine_in',orderNote='',customerId=null,redeemPoints=false,memberRewardId=null,memberRewardQuantity=0}=req.body;
   if(!Array.isArray(items)||!items.length) return res.status(400).json({message:'Giỏ hàng trống'});
   if(!['cash','transfer'].includes(paymentMethod)) return res.status(400).json({message:'Phương thức thanh toán không hợp lệ'});
+  if(!['dine_in','takeaway'].includes(orderType)) return res.status(400).json({message:'Hình thức nhận món không hợp lệ'});
+  const safeOrderNote = String(orderNote || '').trim().slice(0,300);
   const client=await pool.connect();
   try{
     await client.query('BEGIN');
@@ -540,7 +542,7 @@ app.post('/api/orders',auth,async(req,res)=>{
 
     // Tiền mặt được hoàn tất ngay. Chuyển khoản phải chờ payOS xác nhận webhook.
     const initialStatus = (paymentMethod === 'transfer' && total > 0) ? 'pending' : 'paid';
-    const order=await client.query(`INSERT INTO orders(user_id,shift_id,customer_id,payment_method,subtotal,discount,automatic_discount,points_discount,points_used,points_earned,member_reward_id,member_reward_quantity,member_reward_discount,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[req.user.id,shiftId,customer?.id || null,paymentMethod,subtotal,automaticDiscount+pointsDiscount+memberCouponDiscount,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,memberReward?.id || null,memberCouponQty,memberCouponDiscount,total,initialStatus]);
+    const order=await client.query(`INSERT INTO orders(user_id,shift_id,customer_id,payment_method,order_type,order_note,subtotal,discount,automatic_discount,points_discount,points_used,points_earned,member_reward_id,member_reward_quantity,member_reward_discount,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,[req.user.id,shiftId,customer?.id || null,paymentMethod,orderType,safeOrderNote,subtotal,automaticDiscount+pointsDiscount+memberCouponDiscount,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,memberReward?.id || null,memberCouponQty,memberCouponDiscount,total,initialStatus]);
     for(const x of normalized){
       const oi=await client.query(`INSERT INTO order_items(order_id,menu_item_id,item_name,unit_price,quantity,line_total,sugar_percent,ice_percent) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[order.rows[0].id,x.m.id,x.m.name,x.m.price,x.qty,x.line,x.sugarPercent,x.icePercent]);
       for(const t of x.tops) await client.query(`INSERT INTO order_item_toppings(order_item_id,topping_id,topping_name,topping_price,quantity) VALUES($1,$2,$3,$4,$5)`,[oi.rows[0].id,t.id,t.name,t.price,t.quantity]);

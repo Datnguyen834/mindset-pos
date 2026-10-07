@@ -1506,3 +1506,9 @@ body.modal-open { overflow: hidden; }
   .price{font-size:12px}
   .content{padding-left:7px;padding-right:7px}
 }
+
+.order-service-box{margin:10px 0 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.order-type-options{margin-top:7px}
+.order-note-label{display:block;margin-top:9px;font-size:12px;font-weight:800;color:var(--muted)}
+.order-note-label textarea{display:block;width:100%;box-sizing:border-box;margin-top:5px;resize:vertical;min-height:52px;border:1px solid var(--line);border-radius:9px;padding:9px 10px;font:inherit;color:var(--text);background:#fafcfb}
+.order-note-label textarea:focus{outline:none;border-color:var(--green);background:#fff}
