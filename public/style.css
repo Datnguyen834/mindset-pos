@@ -1512,3 +1512,52 @@ body.modal-open { overflow: hidden; }
 .order-note-label{display:block;margin-top:9px;font-size:12px;font-weight:800;color:var(--muted)}
 .order-note-label textarea{display:block;width:100%;box-sizing:border-box;margin-top:5px;resize:vertical;min-height:52px;border:1px solid var(--line);border-radius:9px;padding:9px 10px;font:inherit;color:var(--text);background:#fafcfb}
 .order-note-label textarea:focus{outline:none;border-color:var(--green);background:#fff}
+
+
+/* Larger, more comfortable order panel */
+.order-panel{
+  width: 390px !important;
+  min-width: 390px !important;
+}
+.cart-panel,
+.order-panel{
+  font-size: 14px;
+}
+.cart-panel .customer-cart-btn{
+  min-height: 52px;
+  padding: 12px 14px;
+}
+.cart-panel .cart-items{
+  max-height: none;
+}
+.cart-panel .order-service-box{
+  padding: 12px 0 14px;
+  margin: 12px 0 14px;
+}
+.cart-panel .order-type-options{
+  gap: 10px;
+}
+.cart-panel .order-type-options .payment-option,
+.cart-panel .payment-options .payment-option{
+  min-height: 48px;
+  font-size: 14px;
+}
+.cart-panel .order-note-label textarea{
+  min-height: 64px;
+  font-size: 13px;
+}
+.cart-panel .payment-label{
+  font-size: 13px;
+  margin-bottom: 7px;
+}
+.cart-panel .total-row{
+  font-size: 15px;
+}
+.cart-panel .grand-total,
+.cart-panel .total-amount{
+  font-size: 23px;
+}
+.cart-panel .pay-btn{
+  min-height: 52px;
+  font-size: 15px;
+}
