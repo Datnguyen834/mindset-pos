@@ -13,7 +13,8 @@ let state = {
   discountRules: [],
   page: 'pos',
   paymentMethod: 'cash',
-  orderType: 'dine_in',
+  orderType: null,
+  tableNumber: null,
   orderNote: '',
   catVisible: false,
   userList: null,
@@ -722,16 +723,26 @@ function renderPOS() {
             </div>
             <div class="payment-choice">
               <div class="order-service-box">
-            <div class="payment-label">Hình thức nhận món</div>
-            <div class="payment-options order-type-options">
-              <button type="button" class="payment-option ${state.orderType === 'dine_in' ? 'active' : ''}" id="orderTypeDineIn" onclick="selectOrderType('dine_in')">🍽️ Dùng tại chỗ</button>
-              <button type="button" class="payment-option ${state.orderType === 'takeaway' ? 'active' : ''}" id="orderTypeTakeaway" onclick="selectOrderType('takeaway')">🥡 Mang về</button>
-            </div>
-            <label class="order-note-label">Ghi chú
-              <textarea id="orderNote" rows="2" maxlength="300" placeholder="Ví dụ: ít đá, không đường, đóng gói riêng..." oninput="state.orderNote=this.value"></textarea>
-            </label>
-          </div>
-          <div class="payment-label">Phương thức thanh toán</div>
+                <div class="payment-label">Hình thức nhận món <span class="required-mark">*</span></div>
+                <div class="payment-options order-type-options">
+                  <button type="button" class="payment-option ${state.orderType === 'dine_in' ? 'active' : ''}" id="orderTypeDineIn" onclick="selectOrderType('dine_in')">🍽️ Dùng tại chỗ</button>
+                  <button type="button" class="payment-option ${state.orderType === 'takeaway' ? 'active' : ''}" id="orderTypeTakeaway" onclick="selectOrderType('takeaway')">🥡 Mang về</button>
+                </div>
+                ${state.orderType === 'dine_in' ? `
+                  <div class="table-picker">
+                    <div class="table-picker-title">Chọn thẻ <span class="required-mark">*</span></div>
+                    <div class="table-grid">
+                      ${Array.from({length:20}, (_,i) => {
+                        const n=i+1;
+                        return `<button type="button" class="table-card ${state.tableNumber === n ? 'active' : ''}" onclick="selectTable(${n})">Thẻ ${n}</button>`;
+                      }).join('')}
+                    </div>
+                  </div>` : ''}
+                <label class="order-note-label">Ghi chú
+                  <textarea id="orderNote" rows="2" maxlength="300" placeholder="Ví dụ: ít đá, không đường, đóng gói riêng..." oninput="state.orderNote=this.value"></textarea>
+                </label>
+              </div>
+              <div class="payment-label">Phương thức thanh toán</div>
               <div class="payment-options">
                 <button class="payment-option active" id="payCash" onclick="selectPayment('cash')">💵 Tiền mặt</button>
                 <button class="payment-option" id="payTransfer" onclick="selectPayment('transfer')">▣ Chuyển khoản</button>
@@ -752,8 +763,12 @@ function renderPOS() {
 
 function selectOrderType(type) {
   state.orderType = type === 'takeaway' ? 'takeaway' : 'dine_in';
-  $('#orderTypeDineIn')?.classList.toggle('active', state.orderType === 'dine_in');
-  $('#orderTypeTakeaway')?.classList.toggle('active', state.orderType === 'takeaway');
+  if (state.orderType !== 'dine_in') state.tableNumber = null;
+  renderPOS();
+}
+function selectTable(n) {
+  state.tableNumber = Number(n);
+  renderPOS();
 }
 function setCat(c) { state.category = c; renderPOS(); }
 function filterMenu() { drawMenu(); }
@@ -1149,7 +1164,8 @@ function clearCart() {
   state.cartExpanded.clear();
   state.checkoutCustomer = { customer: null, redeem: false, coupon: null };
   state.pendingCustomerSelection = null;
-  state.orderType = 'dine_in';
+  state.orderType = null;
+  state.tableNumber = null;
   state.orderNote = '';
   renderPOS();
 }
@@ -1229,7 +1245,21 @@ function syncPaymentUI() {
 let transferPaymentPoll = null;
 let transferPaymentOrderId = null;
 
+function validateOrderType() {
+  if (!state.orderType) {
+    toast('Vui lòng chọn Dùng tại chỗ hoặc Mang về', true);
+    return false;
+  }
+  if (state.orderType === 'dine_in' && !state.tableNumber) {
+    toast('Vui lòng chọn bàn', true);
+    return false;
+  }
+  return true;
+}
+
 async function checkout() {
+  if (!validateOrderType()) return;
+
   if (!state.cart.length) return toast('Hãy chọn ít nhất một món', true);
   continueCheckoutAfterLoyalty();
 }
@@ -1244,6 +1274,7 @@ async function startTransferPayment() {
       items: state.cart.map(x => ({menuItemId:x.menuItemId, quantity:x.quantity, sugarPercent:x.sugarPercent, icePercent:x.icePercent, toppings:x.toppings.map(t => ({id:t.id,quantity:t.quantity}))})),
       paymentMethod:'transfer',
       orderType: state.orderType,
+      tableNumber: state.tableNumber,
       orderNote: state.orderNote.trim(),
       customerId: state.checkoutCustomer?.customer?.id || null,
       redeemPoints: !!state.checkoutCustomer?.redeem,
@@ -1333,7 +1364,8 @@ async function finishPaidTransfer(orderId) {
     const d = await api(`/api/orders/${orderId}`);
     state.cart = [];
     state.checkoutCustomer = {customer:null,redeem:false,coupon:null};
-    state.orderType = 'dine_in';
+    state.orderType = null;
+    state.tableNumber = null;
     state.orderNote = '';
     closeModal();
     renderPOS();
@@ -1621,6 +1653,7 @@ async function completePayment(method, cashMeta = null) {
       cashReceived: cashMeta?.received || null,
       cashChange: cashMeta?.change || null,
       orderType: state.orderType,
+      tableNumber: state.tableNumber,
       orderNote: state.orderNote.trim(),
       customerId: state.checkoutCustomer?.customer?.id || null,
       redeemPoints: !!state.checkoutCustomer?.redeem,
@@ -1630,7 +1663,8 @@ async function completePayment(method, cashMeta = null) {
     const customerResult = d.customer ? `<div class="customer-success-summary"><span>Khách hàng</span><b>${esc(d.customer.fullName)}</b><span>Ngày sinh</span><b>${fmtBirthDate(d.customer.birthDate)}</b><span>Điểm hiện tại</span><b>${Number(d.customer.points || 0)} điểm</b>${d.pointsUsed ? `<span>Đã trừ</span><b>${d.pointsUsed} điểm (-${money(d.pointsDiscount)})</b>` : ''}${d.pointsEarned ? `<span>Tích thêm</span><b>+${d.pointsEarned} điểm</b>` : ''}</div>` : '';
     state.cart = [];
     state.checkoutCustomer = {customer:null,redeem:false,coupon:null};
-    state.orderType = 'dine_in';
+    state.orderType = null;
+    state.tableNumber = null;
     state.orderNote = '';
     closeModal();
     renderPOS();
@@ -1780,7 +1814,8 @@ async function printOrder(id) {
   const pointsDiscount = Number(o.points_discount || 0);
   const paymentMethod = o.payment_method === 'cash' ? 'Cash' : 'Banking';
   const orderTypeLabel = o.order_type === 'takeaway' ? 'Mang về' : 'Dùng tại chỗ';
-  const serviceLine = `<br>Hình thức: ${orderTypeLabel}${o.order_note ? `<br>Ghi chú: ${esc(o.order_note)}` : ''}`;
+  const tableLine = o.order_type === 'dine_in' && o.table_number ? `<br>Bàn: ${o.table_number}` : '';
+  const serviceLine = `<br>Hình thức: ${orderTypeLabel}${tableLine}${o.order_note ? `<br>Ghi chú: ${esc(o.order_note)}` : ''}`;
   const cashPaymentLine = o.payment_method === 'cash' && o.cash_received != null
     ? `<br>Tiền khách đưa: ${money(o.cash_received)} · Tiền thối: ${money(o.cash_change || 0)}`
     : '';
@@ -2429,5 +2464,5 @@ $('#togglePass').onclick = () => { const i=$('#loginPass'); i.type=i.type==='pas
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function tick(){const d=new Date();$('#clock').textContent=d.toLocaleString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});} setInterval(tick,1000); tick();
 
-Object.assign(window,{go,logout,toggleCatVisibility,selectOrderType,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,searchMember,memberForm,saveMember,usePhysicalMemberCoupon,applyMemberCouponToCart,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
+Object.assign(window,{go,logout,toggleCatVisibility,selectOrderType,selectTable,setCat,filterMenu,openProduct,addConfiguredProduct,changeQty,removeCart,clearCart,editCartItem,adjustTopModal,saveCartItem,selectPayment,checkout,completePayment,openCashPaymentModal,renderCashPaymentModal,changeCashDenomination,confirmCashPayment,openCustomerLoyaltyModal,searchCustomerForCheckout,skipCustomerAndContinue,chooseCustomerOption,showCreateCustomerForm,createCustomerAndContinue,closeCustomerPicker,printOrder,userForm,saveUser,deleteUser,searchMember,memberForm,saveMember,usePhysicalMemberCoupon,applyMemberCouponToCart,menuForm,saveMenu,deleteMenu,categoryForm,deleteCategory,toppingForm,saveTop,deleteTop,toggleSettingsSection,loadReport,confirmDelete,closeConfirmDelete,runConfirmDelete});
 boot();
