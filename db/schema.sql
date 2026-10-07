@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
   name VARCHAR(120) NOT NULL,
   category VARCHAR(40) NOT NULL DEFAULT 'Khác',
   price INTEGER NOT NULL CHECK (price >= 0),
+  image_path TEXT,
   image_data TEXT,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

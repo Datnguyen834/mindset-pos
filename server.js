@@ -65,9 +65,71 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const q = (text, params=[]) => pool.query(text, params);
 
+// Product images are source-controlled in Git. Neon stores only the relative image path.
+const MENU_IMAGE_DIR = path.join(__dirname, 'public/assets/menu');
+const GITHUB_OWNER = String(process.env.GITHUB_OWNER || 'Datnguyen834').trim();
+const GITHUB_REPO = String(process.env.GITHUB_REPO || 'mindset-pos').trim();
+const GITHUB_BRANCH = String(process.env.GITHUB_BRANCH || 'main').trim();
+const GITHUB_TOKEN = String(process.env.GITHUB_TOKEN || '').trim();
+const GITHUB_API = `https://api.github.com/repos/${encodeURIComponent(GITHUB_OWNER)}/${encodeURIComponent(GITHUB_REPO)}/contents`;
+
+function slugifyFileName(value) {
+  return String(value || 'mon')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'mon';
+}
+function imagePathFromFile(file) { return `/assets/menu/${file}`; }
+function localImageFileFromPath(imagePath) {
+  const prefix='/assets/menu/';
+  if (!String(imagePath||'').startsWith(prefix)) return null;
+  const file=path.basename(String(imagePath).slice(prefix.length));
+  if (!file || file.includes('..') || /[\\/]/.test(file)) return null;
+  return path.join(MENU_IMAGE_DIR,file);
+}
+async function githubRequest(method, filePath, body) {
+  if (!GITHUB_TOKEN) throw new Error('Thiếu GITHUB_TOKEN trên Render. Hãy thêm GitHub token để lưu ảnh vào Git.');
+  const headers={Authorization:`Bearer ${GITHUB_TOKEN}`,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'Mindset-POS'};
+  const url=`${GITHUB_API}/${filePath.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(GITHUB_BRANCH)}`;
+  const r=await fetch(url,{method,headers,body:body?JSON.stringify(body):undefined});
+  if (!r.ok) {
+    let detail=''; try { const j=await r.json(); detail=j.message||''; } catch {}
+    const err=new Error(`GitHub ${r.status}: ${detail||r.statusText}`); err.status=r.status; throw err;
+  }
+  return r.json();
+}
+async function commitImageToGitHub(filename, buffer, message) {
+  const relative=`public/assets/menu/${filename}`;
+  let sha;
+  try { const current=await githubRequest('GET',relative); sha=current.sha; } catch(e) { if(e.status!==404) throw e; }
+  const body={message,content:buffer.toString('base64'),branch:GITHUB_BRANCH};
+  if(sha) body.sha=sha;
+  await githubRequest('PUT',relative,body);
+  fs.mkdirSync(MENU_IMAGE_DIR,{recursive:true});
+  fs.writeFileSync(path.join(MENU_IMAGE_DIR,filename),buffer);
+  return imagePathFromFile(filename);
+}
+function imagePathForName(name) {
+  const aliases = new Map([
+    ['Cà phê đen','ca-phe-den.jpg'],['Cà phê sữa','ca-phe-sua.jpg'],['Americano','americano.jpg'],['Latte','latte.jpg'],['Cappuccino','cappuccino.jpg'],
+    ['Cold Brew','cold-brew.jpg'],['Bạc xỉu','bac-xiu.jpg'],['Matcha Latte','matcha-latte.jpg'],['Trà đào','tra-dao.jpg'],['Trà vải','tra-vai.jpg'],['Trà ô long','tra-o-long.jpg'],['Trà lài','tra-lai.jpg'],
+    ['Chocolate','chocolate.jpg'],['Đá xay socola','da-xay-socola.jpg'],['Đá xay matcha','da-xay-matcha.jpg'],
+    ['Tiramisu','tiramisu.svg'],['Cheesecake','cheesecake.svg'],['Croissant','croissant.svg'],['Su kem','su-kem.svg'],['Red Velvet','red-velvet.svg'],['Cookie chocolate','cookie.svg'],
+    ['Bánh cheesecake','cheesecake.svg'],['Bánh red velvet','red-velvet.svg'],['Bánh chocolate','chocolate.jpg'],['Bánh matcha','matcha-latte.jpg'],
+    ['Croissant chocolate','croissant.svg'],['Cookie chocolate chip','cookie.svg'],['Brownie','brownie.png']
+  ]);
+  const exact=aliases.get(String(name||''));
+  if(exact && fs.existsSync(path.join(MENU_IMAGE_DIR,exact))) return imagePathFromFile(exact);
+  const files=fs.existsSync(MENU_IMAGE_DIR)?fs.readdirSync(MENU_IMAGE_DIR):[];
+  const slug=slugifyFileName(name);
+  const hit=files.find(f=>slugifyFileName(path.parse(f).name)===slug || slugifyFileName(path.parse(f).name).includes(slug) || slug.includes(slugifyFileName(path.parse(f).name)));
+  return hit ? imagePathFromFile(hit) : null;
+}
+
 async function initDb() {
   const schema = fs.readFileSync(path.join(__dirname, 'db/schema.sql'), 'utf8');
   await q(schema);
+  await q(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_path TEXT`);
   const count = await q('SELECT COUNT(*)::int AS n FROM users');
   if (count.rows[0].n === 0) {
     const a = await bcrypt.hash('admin@123', 10);
@@ -96,9 +158,8 @@ async function initDb() {
       ['Trà ô long','Trà',30000,'tra-o-long.jpg'],['Trà lài','Trà',30000,'tra-lai.jpg'],['Chocolate','Khác',35000,'chocolate.jpg'],['Đá xay socola','Đá xay',45000,'da-xay-socola.jpg'],['Đá xay matcha','Đá xay',45000,'da-xay-matcha.jpg']
     ];
     for (const [name,cat,price,file] of items) {
-      const p = path.join(__dirname,'public/assets/menu',file);
-      const data = fs.existsSync(p) ? `data:image/jpeg;base64,${fs.readFileSync(p).toString('base64')}` : null;
-      await q('INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,$4)',[name,cat,price,data]);
+      const imagePath = fs.existsSync(path.join(MENU_IMAGE_DIR,file)) ? imagePathFromFile(file) : null;
+      await q('INSERT INTO menu_items(name,category,price,image_path,image_data) VALUES($1,$2,$3,$4,NULL)',[name,cat,price,imagePath]);
     }
   }
   // Add bakery category/products without duplicating existing data.
@@ -114,11 +175,8 @@ async function initDb() {
   for (const [name,cat,price,file] of bakeryItems) {
     const exists = await q('SELECT id FROM menu_items WHERE name=$1 LIMIT 1',[name]);
     if (!exists.rowCount) {
-      const p = path.join(__dirname,'public/assets/menu',file);
-      const ext = path.extname(file).toLowerCase();
-      const mime = ext === '.svg' ? 'image/svg+xml' : 'image/jpeg';
-      const data = fs.existsSync(p) ? `data:${mime};base64,${fs.readFileSync(p).toString('base64')}` : null;
-      await q('INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,$4)',[name,cat,price,data]);
+      const imagePath = fs.existsSync(path.join(MENU_IMAGE_DIR,file)) ? imagePathFromFile(file) : null;
+      await q('INSERT INTO menu_items(name,category,price,image_path,image_data) VALUES($1,$2,$3,$4,NULL)',[name,cat,price,imagePath]);
     }
   }
   await q(`INSERT INTO categories(name) SELECT DISTINCT category FROM menu_items WHERE category IS NOT NULL AND TRIM(category) <> '' ON CONFLICT(name) DO NOTHING`);
@@ -203,88 +261,15 @@ async function initDb() {
     if (existing.rowCount) {
       await q(`UPDATE menu_items SET category=$1, price=$2, active=TRUE, updated_at=NOW() WHERE id=$3`, [cat, price, existing.rows[0].id]);
     } else {
-      await q(`INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,NULL)`, [name, cat, price]);
+      await q(`INSERT INTO menu_items(name,category,price,image_path,image_data) VALUES($1,$2,$3,$4,NULL)`, [name, cat, price, imagePathForName(name)]);
     }
   }
-  // Sync local product images into the database on every server start.
-  // This is intentional: Render deploys the images from Git, while the POS
-  // serves image_data from Neon. Whenever an image file is replaced in Git,
-  // the matching Neon record is refreshed automatically without recreating
-  // menu items or touching orders/customers.
-  const imageMap = {
-    'Cà phê đen':'ca-phe-den.jpg',
-    'Cà phê sữa':'ca-phe-sua.jpg',
-    'Bạc xỉu':'bac-xiu.jpg',
-    'Cà phê sữa tươi':'ca-phe-sua-tuoi.jpg',
-    'Cà phê muối':'ca-phe-muoi.jpg',
-    'Cà phê cốt dừa':'ca-phe-sua-dua.jpg',
-    'Americano':'americano.jpg',
-    'Cappuccino':'cappuccino.jpg',
-    'Latte':'latte.jpg',
-    'Mocha':'mocha.jpg',
-    'Trà sữa truyền thống':'tra-sua-truyen-thong.jpg',
-    'Trà sữa socola':'tra-sua-socola.jpg',
-    'Trà sữa matcha':'tra-sua-matcha.jpg',
-    'Trà sữa khoai môn':'tra-sua-khoai-mon.jpg',
-    'Trà sữa caramel':'tra-sua-caramel.jpg',
-    'Trà sữa dâu':'tra-sua-dau.jpg',
-    'Trà sữa thái xanh':'tra-sua-thai-xanh.jpg',
-    'Trà sữa thái đỏ':'tra-sua-thai-do.jpg',
-    'Trà sữa kem cheese':'tra-sua-kem-cheese.jpg',
-    'Trà sữa trân châu đường đen':'tra-sua-tran-chau-duong-den.jpg',
-    'Trà đào cam sả':'tra-dao-cam-sa.jpg',
-    'Trà vải':'tra-vai.jpg',
-    'Trà dâu':'tra-dau.jpg',
-    'Trà tắc mật ong':'tra-tac-mat-ong.jpg',
-    'Trà chanh':'tra-chanh.jpg',
-    'Trà tắc xí muội':'tra-tac-xi-muoi.jpg',
-    'Trà nhiệt đới':'tra-nhiet-doi.jpg',
-    'Trà ô long đào':'tra-o-long-dao-mindset.png',
-    'Sinh tố bơ':null,
-    'Sinh tố xoài':null,
-    'Sinh tố dâu':null,
-    'Sinh tố mãng cầu':null,
-    'Sinh tố chuối':null,
-    'Sinh tố việt quất':null,
-    'Sinh tố mix trái cây':null,
-    'Nước ép cam':null,
-    'Nước ép dưa hấu':null,
-    'Nước ép dứa':null,
-    'Nước ép táo':null,
-    'Nước ép cà rốt':null,
-    'Nước ép ổi':null,
-    'Nước ép chanh dây':null,
-    'Nước ép mix':null,
-    'Đá xay chocolate':'da-xay-socola.png',
-    'Đá xay cookies':'da-xay-cookies.png',
-    'Đá xay matcha':'da-xay-matcha.png',
-    'Đá xay caramel':'da-xay-caramel.png',
-    'Đá xay dâu':'da-xay-dau.png',
-    'Đá xay xoài':'da-xay-xoai.png',
-    'Đá xay cà phê':'da-xay-ca-phe.png',
-    'Đá xay oreo':'da-xay-oreo.png',
-    'Bánh tiramisu':'tiramisu.png',
-    'Bánh cheesecake':'cheesecake.png',
-    'Bánh red velvet':'red-velvet.png',
-    'Bánh chocolate':'banh-chocolate.png',
-    'Bánh matcha':'matcha-cake.png',
-    'Bánh bông lan trứng muối':'bong-lan-trung-muoi.jpg',
-    'Croissant':'croissant.jpg',
-    'Croissant chocolate':'croissant-chocolate.png',
-    'Cookie chocolate chip':'cookie-chocolate-chip.png',
-    'Brownie':'brownie.png'
-  };
-  const mimeByExt = { '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.svg':'image/svg+xml', '.webp':'image/webp' };
-  for (const [name, file] of Object.entries(imageMap)) {
-    if (!file) continue;
-    const p = path.join(__dirname, 'public/assets/menu', file);
-    if (!fs.existsSync(p)) continue;
-    const ext = path.extname(file).toLowerCase();
-    const mime = mimeByExt[ext] || 'application/octet-stream';
-    const data = `data:${mime};base64,${fs.readFileSync(p).toString('base64')}`;
-    await q(`UPDATE menu_items SET image_data=$1, updated_at=NOW() WHERE LOWER(TRIM(name))=LOWER(TRIM($2))`, [data, name]);
+  // Migrate legacy base64 images to Git-backed paths when a matching file exists.
+  const legacy = await q('SELECT id,name FROM menu_items WHERE image_path IS NULL');
+  for (const item of legacy.rows) {
+    const imagePath=imagePathForName(item.name);
+    if(imagePath) await q('UPDATE menu_items SET image_path=$1, image_data=NULL, updated_at=NOW() WHERE id=$2',[imagePath,item.id]);
   }
-
   await q(`INSERT INTO settings(key,value) VALUES('discount_rules','[]') ON CONFLICT(key) DO NOTHING`);
 }
 
@@ -350,7 +335,7 @@ app.get('/api/auth/me',auth,async(req,res)=>{
   res.json({user:{id:u.id,username:u.username,fullName:u.full_name,role:u.role}});
 });
 
-app.get('/api/menu',auth,async(req,res)=>{ const r=await q('SELECT id,name,category,price,image_data AS image,active FROM menu_items WHERE active=true ORDER BY id'); res.json(r.rows); });
+app.get('/api/menu',auth,async(req,res)=>{ const r=await q(`SELECT id,name,category,price,image_path AS image,active FROM menu_items WHERE active=true ORDER BY id`); res.json(r.rows); });
 app.get('/api/categories',auth,async(req,res)=>{ const r=await q('SELECT id,name FROM categories WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/toppings',auth,async(req,res)=>{ const r=await q('SELECT id,name,price FROM toppings WHERE active=true ORDER BY id'); res.json(r.rows); });
 app.get('/api/settings/payos',auth,payOSAdminOnly,async(req,res)=>{ const cfg=await getPayOSConfig(); if(!cfg) return res.json({configured:false,source:null,clientId:''}); const mask=(v)=>v ? `••••${String(v).slice(-4)}` : ''; res.json({configured:true,source:cfg.source,clientId:cfg.clientId||'',apiKeyMasked:mask(cfg.apiKey),checksumKeyMasked:mask(cfg.checksumKey)}); });
@@ -687,8 +672,43 @@ app.post('/api/admin/users',auth,adminOnly,async(req,res)=>{const {username,pass
 app.put('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{const target=await q('SELECT id,username,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].username==='admin')return res.status(403).json({message:'Tài khoản quản trị gốc không thể chỉnh sửa'});if(req.user.role==='manager' && target.rows[0].role!=='staff')return res.status(403).json({message:'Quản lý chỉ được chỉnh sửa tài khoản nhân viên'});const {fullName,password,role,active,birthDate}=req.body;const sets=[];const vals=[];if(fullName!==undefined){vals.push(fullName);sets.push(`full_name=$${vals.length}`)}if(birthDate!==undefined){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(birthDate)))return res.status(400).json({message:'Ngày tháng năm sinh không hợp lệ'});vals.push(birthDate);sets.push(`birth_date=$${vals.length}`)}if(role!==undefined){if(!['manager','staff'].includes(role))return res.status(400).json({message:'Role không hợp lệ'});vals.push(role);sets.push(`role=$${vals.length}`)}if(active!==undefined){vals.push(!!active);sets.push(`active=$${vals.length}`)}if(password){vals.push(await bcrypt.hash(password,10));sets.push(`password_hash=$${vals.length}`)}if(!sets.length)return res.json({ok:true});vals.push(req.params.id);const r=await q(`UPDATE users SET ${sets.join(',')} WHERE id=$${vals.length} RETURNING id,username,full_name AS "fullName",birth_date AS "birthDate",role,active`,vals);res.json(r.rows[0]);});
 app.delete('/api/admin/users/:id',auth,adminOnly,async(req,res)=>{if(Number(req.params.id)===req.user.id)return res.status(400).json({message:'Không thể xóa tài khoản đang đăng nhập'});const target=await q('SELECT id,username,role FROM users WHERE id=$1',[req.params.id]);if(!target.rowCount)return res.status(404).json({message:'Không tìm thấy tài khoản'});if(target.rows[0].username==='admin')return res.status(403).json({message:'Tài khoản quản trị gốc không thể xóa'});if(req.user.role==='manager' && target.rows[0].role!=='staff')return res.status(403).json({message:'Quản lý chỉ được xóa tài khoản nhân viên'});const r=await q('DELETE FROM users WHERE id=$1 RETURNING id,username',[req.params.id]);res.json({ok:true,user:r.rows[0]});});
 
-app.post('/api/admin/menu',auth,adminOnly,upload.single('image'),async(req,res)=>{const {name,category='Khác',price}=req.body;if(!name||price===undefined)return res.status(400).json({message:'Thiếu tên/giá'});const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});const img=req.file?`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`:null;const r=await q('INSERT INTO menu_items(name,category,price,image_data) VALUES($1,$2,$3,$4) RETURNING id,name,category,price,image_data AS image,active',[name,category,money(price),img]);res.json(r.rows[0]);});
-app.put('/api/admin/menu/:id',auth,adminOnly,upload.single('image'),async(req,res)=>{const {name,category,price,active}=req.body;const sets=[];const vals=[];if(category!==undefined){const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});}for(const [k,v] of [['name',name],['category',category],['price',price!==undefined?money(price):undefined],['active',active!==undefined?active!=='false':undefined]]){if(v!==undefined){vals.push(v);sets.push(`${k}=$${vals.length}`)}}if(req.file){vals.push(`data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`);sets.push(`image_data=$${vals.length}`)}vals.push(req.params.id);const r=await q(`UPDATE menu_items SET ${sets.join(',')},updated_at=NOW() WHERE id=$${vals.length} RETURNING id,name,category,price,image_data AS image,active`,vals);res.json(r.rows[0]);});
+app.post('/api/admin/menu',auth,adminOnly,upload.single('image'),async(req,res)=>{
+  const {name,category='Khác',price}=req.body;
+  if(!name||price===undefined)return res.status(400).json({message:'Thiếu tên/giá'});
+  const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);
+  if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});
+  let imagePath=null;
+  try {
+    if(req.file){
+      const ext=path.extname(req.file.originalname||'').toLowerCase() || (req.file.mimetype==='image/png'?'.png':req.file.mimetype==='image/webp'?'.webp':'.jpg');
+      const filename=`${slugifyFileName(name)}${ext}`;
+      imagePath=await commitImageToGitHub(filename,req.file.buffer,`Update product image: ${name}`);
+    }
+    const r=await q('INSERT INTO menu_items(name,category,price,image_path,image_data) VALUES($1,$2,$3,$4,NULL) RETURNING id,name,category,price,image_path AS image,active',[name,category,money(price),imagePath]);
+    res.json(r.rows[0]);
+  } catch(e){ res.status(e.status===401||e.status===403?e.status:500).json({message:e.message||'Không thể lưu ảnh vào Git'}); }
+});
+app.put('/api/admin/menu/:id',auth,adminOnly,upload.single('image'),async(req,res)=>{
+  const {name,category,price,active}=req.body;
+  const current=await q('SELECT * FROM menu_items WHERE id=$1',[req.params.id]);
+  if(!current.rowCount)return res.status(404).json({message:'Không tìm thấy món'});
+  const sets=[];const vals=[];
+  if(category!==undefined){const cat=await q('SELECT id FROM categories WHERE name=$1 AND active=true',[category]);if(!cat.rowCount)return res.status(400).json({message:'Danh mục không tồn tại'});}
+  for(const [k,v] of [['name',name],['category',category],['price',price!==undefined?money(price):undefined],['active',active!==undefined?active!=='false':undefined]]){if(v!==undefined){vals.push(v);sets.push(`${k}=$${vals.length}`)}}
+  try {
+    if(req.file){
+      const ext=path.extname(req.file.originalname||'').toLowerCase() || (req.file.mimetype==='image/png'?'.png':req.file.mimetype==='image/webp'?'.webp':'.jpg');
+      const existingPath=current.rows[0].image_path;
+      const oldFile=existingPath ? path.basename(existingPath) : null;
+      const filename=oldFile && /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(oldFile) ? oldFile : `${slugifyFileName(name||current.rows[0].name)}${ext}`;
+      const imagePath=await commitImageToGitHub(filename,req.file.buffer,`Update product image: ${name||current.rows[0].name}`);
+      vals.push(imagePath);sets.push(`image_path=$${vals.length}`);sets.push(`image_data=NULL`);
+    }
+    vals.push(req.params.id);
+    const r=await q(`UPDATE menu_items SET ${sets.length?sets.join(',')+',':''} updated_at=NOW() WHERE id=$${vals.length} RETURNING id,name,category,price,image_path AS image,active`,vals);
+    res.json(r.rows[0]);
+  } catch(e){ res.status(e.status===401||e.status===403?e.status:500).json({message:e.message||'Không thể lưu ảnh vào Git'}); }
+});
 app.delete('/api/admin/menu/:id',auth,adminOnly,async(req,res)=>{await q('UPDATE menu_items SET active=false WHERE id=$1',[req.params.id]);res.json({ok:true});});
 app.post('/api/admin/categories',auth,adminOnly,async(req,res)=>{
   const name=String(req.body.name||'').trim();
