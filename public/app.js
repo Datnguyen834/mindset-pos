@@ -1960,12 +1960,60 @@ async function searchMember() {
   try {
     const d = await api('/api/admin/members/search?phone=' + encodeURIComponent(phone));
     if (!d.member) {
-      card.innerHTML = '<div class="member-empty">Không tìm thấy thành viên với số điện thoại này.</div>';
+      card.innerHTML = `<div class="member-empty">
+        <div>Không tìm thấy thành viên với số điện thoại <b>${esc(phone)}</b>.</div>
+        <button type="button" class="btn primary member-create-found-btn" onclick="confirmCreateMember('${esc(phone)}')">+ Tạo tài khoản mới</button>
+      </div>`;
       return;
     }
     renderMemberResult(d.member);
   } catch(e) {
     if (card) card.innerHTML = `<div class="member-empty error-empty">${esc(e.message || 'Không tìm được thành viên')}</div>`;
+  }
+}
+
+function confirmCreateMember(phone) {
+  const safePhone = String(phone || '').replace(/\D/g,'');
+  openModal(`<div class="member-create-confirm">
+    <h3>Không tìm thấy thành viên</h3>
+    <p>Không có tài khoản thành viên với số điện thoại <b>${esc(safePhone)}</b>.</p>
+    <p>Bạn có muốn tạo tài khoản thành viên mới không?</p>
+    <div class="modal-actions">
+      <button type="button" class="btn" onclick="closeModal()">Không</button>
+      <button type="button" class="btn primary" onclick="memberCreateForm('${esc(safePhone)}')">Có, tạo mới</button>
+    </div>
+  </div>`);
+}
+
+function memberCreateForm(phone) {
+  const safePhone = String(phone || '').replace(/\D/g,'');
+  openModal(`<h3>Tạo tài khoản thành viên</h3>
+    <div class="form-grid">
+      <label>Số điện thoại<input id="newMemberPhone" value="${esc(safePhone)}" disabled></label>
+      <label>Họ tên<input id="newMemberFullName" placeholder="Nhập họ tên" autofocus></label>
+      <label>Ngày tháng năm sinh<input id="newMemberBirthDate" type="date" required></label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn" onclick="closeModal()">Hủy</button>
+      <button type="button" class="btn primary" onclick="createMemberAccount()">Tạo tài khoản</button>
+    </div>`);
+}
+
+async function createMemberAccount() {
+  const phone = String($('#newMemberPhone')?.value || '').replace(/\D/g,'');
+  const fullName = String($('#newMemberFullName')?.value || '').trim();
+  const birthDate = String($('#newMemberBirthDate')?.value || '').trim();
+  if (!fullName) return toast('Nhập họ tên thành viên', true);
+  if (!birthDate) return toast('Vui lòng nhập ngày tháng năm sinh', true);
+  try {
+    const d = await api('/api/customers', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,fullName,birthDate})});
+    closeModal();
+    if (d.customer) {
+      renderMemberResult(d.customer);
+      toast('Đã tạo tài khoản thành viên');
+    }
+  } catch (e) {
+    toast(e.message || 'Không tạo được tài khoản thành viên', true);
   }
 }
 

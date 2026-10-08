@@ -2235,3 +2235,7 @@ body.modal-open { overflow: hidden; }
 .data-table tbody td b {
   font-weight: 400 !important;
 }
+
+/* Member search: create-account prompt */
+.member-create-found-btn{margin-top:14px}
+.member-create-confirm p{margin:8px 0;color:var(--muted,#66736d)}
