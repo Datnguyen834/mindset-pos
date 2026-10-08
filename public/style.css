@@ -2228,3 +2228,10 @@ body.modal-open { overflow: hidden; }
 #page.pos-page .cart-row .remove-btn {
   font-weight: 400 !important;
 }
+
+/* Staff management: keep account information in normal text weight */
+.data-table tbody td,
+.data-table tbody td strong,
+.data-table tbody td b {
+  font-weight: 400 !important;
+}
