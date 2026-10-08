@@ -2206,3 +2206,25 @@ body.modal-open { overflow: hidden; }
   font-weight: 700;
   letter-spacing: 0;
 }
+
+/* ===== Cart typography: nhẹ, không in đậm ===== */
+#page.pos-page .cart-row .cart-product-head strong {
+  font-size: 16px !important;
+  line-height: 1.3 !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+}
+
+#page.pos-page .cart-row .qty .btn.small,
+#page.pos-page .cart-row .qty button {
+  font-weight: 400 !important;
+}
+
+#page.pos-page .cart-row .cart-price b {
+  font-size: 16px !important;
+  font-weight: 400 !important;
+}
+
+#page.pos-page .cart-row .remove-btn {
+  font-weight: 400 !important;
+}
