@@ -2128,3 +2128,73 @@ body.modal-open { overflow: hidden; }
   margin-top: 7px;
   font-size: 14px;
 }
+
+/* ===== POS: giảm thêm ~15% chiều cao khu vực từ Tạm tính trở xuống ===== */
+@media (min-width: 901px) {
+  #page.pos-page .cart-total {
+    padding-top: 5px !important;
+    margin-top: 3px !important;
+  }
+  #page.pos-page .cart-total .total-line {
+    margin: 3px 0 !important;
+    line-height: 1.2;
+  }
+  #page.pos-page .cart-total .discount-breakdown {
+    margin-top: -4px !important;
+  }
+  #page.pos-page .cart-total .discount-subline {
+    line-height: 1.15 !important;
+    margin: 2px 0 !important;
+  }
+  #page.pos-page .cart-total .payment-choice {
+    padding: 4px 6px !important;
+    margin: 4px 0 !important;
+  }
+  #page.pos-page .cart-total .order-service-box {
+    margin-bottom: 6px !important;
+    padding-bottom: 6px !important;
+  }
+  #page.pos-page .cart-total .payment-label {
+    margin-bottom: 3px !important;
+  }
+  #page.pos-page .cart-total .payment-options {
+    gap: 5px !important;
+  }
+  #page.pos-page .cart-total .payment-option {
+    min-height: 30px !important;
+    height: 30px !important;
+    padding: 4px 5px !important;
+    font-size: 11px !important;
+  }
+  #page.pos-page .cart-total .selected-table-summary {
+    min-height: 34px !important;
+    margin-top: 5px !important;
+    padding: 4px 7px !important;
+  }
+  #page.pos-page .cart-total .selected-table-summary .btn.small {
+    min-height: 25px !important;
+    padding: 3px 7px !important;
+    font-size: 11px !important;
+  }
+  #page.pos-page .cart-total .order-note-label {
+    margin-top: 4px !important;
+  }
+  #page.pos-page .cart-total .order-note-label textarea {
+    min-height: 38px !important;
+    height: 38px !important;
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+  }
+  #page.pos-page .cart-total .total-line.big {
+    margin-top: 5px !important;
+    margin-bottom: 5px !important;
+    padding-top: 7px !important;
+    font-size: 17px !important;
+  }
+  #page.pos-page .cart-total .payment-main {
+    min-height: 40px !important;
+    height: 40px !important;
+    margin-top: 5px !important;
+    font-size: 13px !important;
+  }
+}
