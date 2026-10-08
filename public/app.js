@@ -934,35 +934,53 @@ function addToCartMerged(item) {
 }
 
 function animateProductToCart(imageSrc, sourceEl = null) {
-  const cart = $('#cartItems');
+  const cart = $('#cartItems') || document.querySelector('.cart');
   if (!cart) return Promise.resolve();
 
-  const source = sourceEl?.querySelector?.('img') || document.querySelector('#modalBox .product-modal-head img');
+  const source = sourceEl?.querySelector?.('img') || document.querySelector('#modalBox .product-config-image img') || document.querySelector('#modalBox .product-modal-head img');
   if (!source) return Promise.resolve();
 
   const from = source.getBoundingClientRect();
   const to = cart.getBoundingClientRect();
-  const flyer = document.createElement('img');
-  flyer.src = imageSrc || source.src || '/assets/logo.png';
-  flyer.className = 'fly-to-cart';
-  flyer.style.left = `${from.left}px`;
-  flyer.style.top = `${from.top}px`;
-  flyer.style.width = `${from.width}px`;
-  flyer.style.height = `${from.height}px`;
+  if (!from.width || !from.height) return Promise.resolve();
+
+  const flyer = document.createElement('div');
+  flyer.className = 'fly-to-cart-wrap';
+  flyer.innerHTML = `<img class="fly-to-cart" src="${esc(imageSrc || source.currentSrc || source.src || '/assets/logo.png')}" alt="">`;
+  const img = flyer.querySelector('img');
+
+  const size = Math.max(58, Math.min(110, Math.min(from.width, from.height) * 0.62));
+  const startX = from.left + from.width / 2 - size / 2;
+  const startY = from.top + from.height / 2 - size / 2;
+  const targetX = to.left + Math.min(54, Math.max(24, to.width * 0.10)) - size / 2;
+  const targetY = to.top + Math.min(34, Math.max(22, to.height * 0.08)) - size / 2;
+
+  Object.assign(flyer.style, {
+    left: `${startX}px`,
+    top: `${startY}px`,
+    width: `${size}px`,
+    height: `${size}px`
+  });
   document.body.appendChild(flyer);
 
-  const targetX = to.left + Math.min(42, Math.max(18, to.width * 0.08));
-  const targetY = to.top + 28;
-  const dx = targetX - from.left;
-  const dy = targetY - from.top;
+  // Một quầng sáng nhỏ giúp người dùng nhìn rõ đường bay.
+  flyer.style.setProperty('--dx', `${targetX - startX}px`);
+  flyer.style.setProperty('--dy', `${targetY - startY}px`);
 
-  requestAnimationFrame(() => {
-    flyer.style.transform = `translate(${dx}px, ${dy}px) scale(.28) rotate(8deg)`;
-    flyer.style.opacity = '0.25';
-  });
+  // Đích đến nhấp nhẹ khi món chạm vào giỏ.
+  cart.classList.remove('cart-fly-target');
+  void cart.offsetWidth;
+  cart.classList.add('cart-fly-target');
+  setTimeout(() => cart.classList.remove('cart-fly-target'), 650);
+
+  requestAnimationFrame(() => flyer.classList.add('is-flying'));
 
   return new Promise(resolve => {
-    setTimeout(() => { flyer.remove(); resolve(); }, 560);
+    setTimeout(() => {
+      flyer.classList.remove('is-flying');
+      flyer.remove();
+      resolve();
+    }, 650);
   });
 }
 
