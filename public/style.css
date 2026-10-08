@@ -2047,3 +2047,84 @@ body.modal-open { overflow: hidden; }
     flex-basis: 96px !important;
   }
 }
+
+/* ===== Final POS compact order panel ===== */
+@media (min-width: 1400px) {
+  #page.pos-page .pos-layout {
+    grid-template-columns: minmax(0, 1fr) 380px !important;
+    gap: 16px !important;
+  }
+}
+@media (min-width: 901px) and (max-width: 1399px) {
+  #page.pos-page .pos-layout {
+    grid-template-columns: minmax(0, 1fr) 360px !important;
+    gap: 14px !important;
+  }
+}
+
+#page.pos-page .cart {
+  padding: 12px !important;
+}
+#page.pos-page .cart-head {
+  min-height: 38px;
+  margin-bottom: 5px;
+}
+#page.pos-page .cart h2 {
+  font-size: 21px;
+}
+#page.pos-page .customer-cart-btn {
+  min-height: 46px;
+  padding: 0 11px;
+  margin: 2px 0 7px;
+}
+#page.pos-page .cart-total {
+  padding-top: 6px;
+  margin-top: 4px;
+}
+#page.pos-page .total-line {
+  margin: 4px 0;
+}
+#page.pos-page .discount-breakdown {
+  margin-top: -3px;
+}
+#page.pos-page .discount-subline {
+  font-size: 11px;
+  line-height: 1.25;
+}
+#page.pos-page .payment-choice {
+  padding: 5px 7px;
+  margin: 5px 0;
+  border-radius: 9px;
+}
+#page.pos-page .payment-label {
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+#page.pos-page .payment-options {
+  gap: 6px;
+}
+#page.pos-page .payment-option {
+  min-height: 34px;
+  padding: 6px 5px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+#page.pos-page .order-note-label {
+  margin-top: 5px;
+}
+#page.pos-page .order-note-label textarea {
+  min-height: 44px;
+  height: 44px;
+  padding: 7px 9px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+#page.pos-page .total-line.big {
+  font-size: 18px;
+  margin-top: 7px;
+}
+#page.pos-page .payment-main {
+  min-height: 46px;
+  margin-top: 7px;
+  font-size: 14px;
+}
