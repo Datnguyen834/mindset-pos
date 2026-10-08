@@ -975,62 +975,39 @@ body.modal-open { overflow: hidden; }
 }
 
 
-/* Hiệu ứng món bay từ món đã chọn vào khu vực Đơn hàng */
+/* Hiệu ứng món bay nhanh, thu nhỏ thẳng vào khu vực Đơn hàng */
 .fly-to-cart-wrap{
   position:fixed;
   z-index:99999;
   width:80px;
   height:80px;
   pointer-events:none;
-  border-radius:18px;
+  border-radius:14px;
   opacity:1;
   transform:translate3d(0,0,0) scale(1);
   will-change:transform,opacity;
 }
-.fly-to-cart-wrap::after{
-  content:"";
-  position:absolute;
-  inset:-9px;
-  border:2px solid rgba(40,87,70,.30);
-  border-radius:22px;
-  opacity:0;
-  transform:scale(.65);
-}
+.fly-to-cart-wrap::after{display:none}
 .fly-to-cart-wrap .fly-to-cart{
   width:100%;
   height:100%;
   display:block;
   object-fit:cover;
-  border-radius:14px;
-  box-shadow:0 18px 38px rgba(23,55,46,.34),0 0 0 2px rgba(255,255,255,.72);
-  transform:rotate(-4deg);
+  border-radius:12px;
+  box-shadow:0 8px 20px rgba(23,55,46,.20);
+  transform:none;
 }
 .fly-to-cart-wrap.is-flying{
-  animation:flyProductToCart .65s cubic-bezier(.18,.78,.2,1) forwards;
+  animation:flyProductToCart .32s cubic-bezier(.25,.75,.35,1) forwards;
 }
-.fly-to-cart-wrap.is-flying::after{
-  animation:flyProductRing .65s ease-out forwards;
-}
-.cart-fly-target{
-  animation:cartFlyTarget .65s ease-out;
-}
+.fly-to-cart-wrap.is-flying::after{display:none}
+.cart-fly-target{animation:none !important}
 @keyframes flyProductToCart{
   0%{transform:translate3d(0,0,0) scale(1);opacity:1}
-  28%{transform:translate3d(calc(var(--dx) * .24),calc(var(--dy) * .24 - 55px),0) scale(.92) rotate(-10deg);opacity:1}
-  58%{transform:translate3d(calc(var(--dx) * .64),calc(var(--dy) * .64 - 24px),0) scale(.62) rotate(9deg);opacity:.98}
-  82%{transform:translate3d(calc(var(--dx) * .90),calc(var(--dy) * .90 + 5px),0) scale(.42) rotate(-4deg);opacity:.82}
-  100%{transform:translate3d(var(--dx),var(--dy),0) scale(.22) rotate(0deg);opacity:.05}
+  100%{transform:translate3d(var(--dx),var(--dy),0) scale(.16);opacity:.9}
 }
-@keyframes flyProductRing{
-  0%{opacity:0;transform:scale(.65)}
-  25%{opacity:.7}
-  100%{opacity:0;transform:scale(1.65)}
-}
-@keyframes cartFlyTarget{
-  0%,100%{transform:translateX(0) scale(1)}
-  45%{transform:translateX(3px) scale(1.012)}
-  70%{transform:translateX(-2px) scale(.995)}
-}
+@keyframes flyProductRing{from,to{opacity:0;transform:none}}
+@keyframes cartFlyTarget{from,to{transform:none}}
 
 /* Cài đặt dạng từng mục riêng: mặc định thu gọn, bấm vào mới mở */
 .settings-layout{

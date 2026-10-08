@@ -963,15 +963,8 @@ function animateProductToCart(imageSrc, sourceEl = null) {
   });
   document.body.appendChild(flyer);
 
-  // Một quầng sáng nhỏ giúp người dùng nhìn rõ đường bay.
   flyer.style.setProperty('--dx', `${targetX - startX}px`);
   flyer.style.setProperty('--dy', `${targetY - startY}px`);
-
-  // Đích đến nhấp nhẹ khi món chạm vào giỏ.
-  cart.classList.remove('cart-fly-target');
-  void cart.offsetWidth;
-  cart.classList.add('cart-fly-target');
-  setTimeout(() => cart.classList.remove('cart-fly-target'), 650);
 
   requestAnimationFrame(() => flyer.classList.add('is-flying'));
 
@@ -980,7 +973,7 @@ function animateProductToCart(imageSrc, sourceEl = null) {
       flyer.classList.remove('is-flying');
       flyer.remove();
       resolve();
-    }, 650);
+    }, 320);
   });
 }
 
