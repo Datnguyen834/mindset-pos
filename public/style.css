@@ -2027,3 +2027,10 @@ body.modal-open { overflow: hidden; }
   min-height: 48px;
   margin-top: 7px;
 }
+
+/* ===== Tăng kích thước tên món trong Đơn hàng ===== */
+#page.pos-page .cart-row strong {
+  font-size: 18px !important;
+  line-height: 1.25;
+  font-weight: 850;
+}
