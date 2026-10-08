@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS orders (
   points_used INTEGER NOT NULL DEFAULT 0,
   points_earned INTEGER NOT NULL DEFAULT 0,
   total INTEGER NOT NULL DEFAULT 0,
+  payos_order_code BIGINT UNIQUE,
   status VARCHAR(20) NOT NULL DEFAULT 'paid',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

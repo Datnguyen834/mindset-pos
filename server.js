@@ -134,6 +134,11 @@ async function initDb() {
   await q(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type VARCHAR(20)`);
   await q(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_number INTEGER`);
   await q(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_note VARCHAR(300) NOT NULL DEFAULT ''`);
+  await q(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payos_order_code BIGINT`);
+  // Các đơn cũ từng dùng id làm orderCode PayOS nên giữ nguyên mapping để webhook/hủy
+  // của các đơn cũ vẫn hoạt động. Đơn mới dùng một namespace riêng, tránh trùng mã PayOS.
+  await q(`UPDATE orders SET payos_order_code=id WHERE payos_order_code IS NULL`);
+  await q(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payos_order_code ON orders(payos_order_code)`);
   await q(`UPDATE orders SET order_note='' WHERE order_note IS NULL`);
 
   // Persistent login sessions live in Neon, so a Render restart/deploy cannot
@@ -550,6 +555,11 @@ app.post('/api/orders',auth,async(req,res)=>{
     // Tiền mặt được hoàn tất ngay. Chuyển khoản phải chờ payOS xác nhận webhook.
     const initialStatus = (paymentMethod === 'transfer' && total > 0) ? 'pending' : 'paid';
     const order=await client.query(`INSERT INTO orders(user_id,shift_id,customer_id,payment_method,order_type,table_number,order_note,subtotal,discount,automatic_discount,points_discount,points_used,points_earned,member_reward_id,member_reward_quantity,member_reward_discount,total,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,[req.user.id,shiftId,customer?.id || null,paymentMethod,orderType,orderType==='dine_in'?Number(tableNumber):null,safeOrderNote,subtotal,automaticDiscount+pointsDiscount+memberCouponDiscount,automaticDiscount,pointsDiscount,pointsUsed,pointsEarned,memberReward?.id || null,memberCouponQty,memberCouponDiscount,total,initialStatus]);
+    // Không dùng orders.id làm orderCode mới vì PayOS lưu lịch sử orderCode và có thể
+    // từ chối một mã đã từng tồn tại (HTTP 200 / code 231). Dùng namespace riêng.
+    const payosOrderCode = 700000000 + Number(order.rows[0].id);
+    await client.query(`UPDATE orders SET payos_order_code=$1 WHERE id=$2`, [payosOrderCode, order.rows[0].id]);
+    order.rows[0].payos_order_code = payosOrderCode;
     for(const x of normalized){
       const oi=await client.query(`INSERT INTO order_items(order_id,menu_item_id,item_name,unit_price,quantity,line_total,sugar_percent,ice_percent) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,[order.rows[0].id,x.m.id,x.m.name,x.m.price,x.qty,x.line,x.sugarPercent,x.icePercent]);
       for(const t of x.tops) await client.query(`INSERT INTO order_item_toppings(order_item_id,topping_id,topping_name,topping_price,quantity) VALUES($1,$2,$3,$4,$5)`,[oi.rows[0].id,t.id,t.name,t.price,t.quantity]);
@@ -575,11 +585,11 @@ app.post('/api/orders',auth,async(req,res)=>{
         if (!payos) throw new Error('payOS chưa được cấu hình. Admin tổng hãy vào Cài đặt → Kênh thanh toán payOS để nhập bộ key mới.');
         const base = publicBaseUrl();
         const paymentLink = await payos.paymentRequests.create({
-          orderCode: order.rows[0].id,
+          orderCode: Number(order.rows[0].payos_order_code),
           amount: Number(total),
           description: 'Thanh toan CF Mindset',
-          returnUrl: `${base}/?payos=success&orderCode=${order.rows[0].id}`,
-          cancelUrl: `${base}/?payos=cancel&orderCode=${order.rows[0].id}`,
+          returnUrl: `${base}/?payos=success&orderCode=${order.rows[0].payos_order_code}`,
+          cancelUrl: `${base}/?payos=cancel&orderCode=${order.rows[0].payos_order_code}`,
         });
         return res.json({
           orderId: order.rows[0].id,
@@ -900,7 +910,7 @@ app.post('/api/payos/create-payment', auth, async (req,res)=>{
   const orderId=Number(req.body.orderId);
   if(!Number.isInteger(orderId) || orderId<=0) return res.status(400).json({message:'Mã đơn không hợp lệ'});
   try{
-    const r=await q(`SELECT id,total,status,payment_method FROM orders WHERE id=$1 AND user_id=$2 LIMIT 1`,[orderId,req.user.id]);
+    const r=await q(`SELECT id,total,status,payment_method,payos_order_code FROM orders WHERE id=$1 AND user_id=$2 LIMIT 1`,[orderId,req.user.id]);
     if(!r.rowCount) return res.status(404).json({message:'Không tìm thấy đơn hàng'});
     const order=r.rows[0];
     if(order.payment_method!=='transfer') return res.status(400).json({message:'Đơn này không phải thanh toán chuyển khoản'});
@@ -910,11 +920,11 @@ app.post('/api/payos/create-payment', auth, async (req,res)=>{
 
     const base=publicBaseUrl();
     const paymentLink=await payos.paymentRequests.create({
-      orderCode: order.id,
+      orderCode: Number(order.payos_order_code),
       amount: Number(order.total),
       description: 'Thanh toan CF Mindset',
-      returnUrl: `${base}/?payos=success&orderCode=${order.id}`,
-      cancelUrl: `${base}/?payos=cancel&orderCode=${order.id}`,
+      returnUrl: `${base}/?payos=success&orderCode=${order.payos_order_code}`,
+      cancelUrl: `${base}/?payos=cancel&orderCode=${order.payos_order_code}`,
     });
 
     res.json({
@@ -935,7 +945,7 @@ app.post('/api/payos/cancel-payment/:orderId', auth, async (req,res)=>{
   const orderId=Number(req.params.orderId);
   if(!Number.isInteger(orderId) || orderId<=0) return res.status(400).json({message:'Mã đơn không hợp lệ'});
   try{
-    const r=await q(`SELECT id,status,payment_method FROM orders WHERE id=$1 AND user_id=$2 LIMIT 1`,[orderId,req.user.id]);
+    const r=await q(`SELECT id,status,payment_method,payos_order_code FROM orders WHERE id=$1 AND user_id=$2 LIMIT 1`,[orderId,req.user.id]);
     if(!r.rowCount) return res.status(404).json({message:'Không tìm thấy đơn hàng'});
     const order=r.rows[0];
     if(order.payment_method!=='transfer') return res.status(400).json({message:'Đơn này không phải thanh toán chuyển khoản'});
@@ -956,7 +966,7 @@ app.post('/api/payos/cancel-payment/:orderId', auth, async (req,res)=>{
         const payosConfig=await getPayOSConfig();
         const payos=makePayOS(payosConfig);
         if(!payos) throw new Error('payOS chưa được cấu hình');
-        await payos.paymentRequests.cancel(orderId, 'Khach huy');
+        await payos.paymentRequests.cancel(Number(order.payos_order_code), 'Khach huy');
         const cancelled = await q(`UPDATE orders SET status='cancelled' WHERE id=$1 AND status='cancelling' RETURNING member_reward_id,member_reward_quantity`,[orderId]);
         if (cancelled.rowCount && Number(cancelled.rows[0].member_reward_quantity||0) > 0 && cancelled.rows[0].member_reward_id) {
           await q(`UPDATE member_rewards SET remaining_quantity=remaining_quantity+$1,redeemed_at=NULL,redeemed_by=NULL,updated_at=NOW() WHERE id=$2`, [Number(cancelled.rows[0].member_reward_quantity||0), cancelled.rows[0].member_reward_id]);
@@ -1006,7 +1016,7 @@ app.post('/api/payos/webhook', async (req,res)=>{
     const client=await pool.connect();
     try{
       await client.query('BEGIN');
-      const or=await client.query(`SELECT id,total,status,customer_id,points_used,points_earned FROM orders WHERE id=$1 AND payment_method='transfer' FOR UPDATE`,[orderCode]);
+      const or=await client.query(`SELECT id,total,status,customer_id,points_used,points_earned,payos_order_code FROM orders WHERE payos_order_code=$1 AND payment_method='transfer' FOR UPDATE`,[orderCode]);
       if(!or.rowCount){
         await client.query('ROLLBACK');
         console.warn('payOS webhook: order not found',orderCode);
