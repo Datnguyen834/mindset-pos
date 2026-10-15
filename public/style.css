@@ -2239,3 +2239,31 @@ body.modal-open { overflow: hidden; }
 /* Member search: create-account prompt */
 .member-create-found-btn{margin-top:14px}
 .member-create-confirm p{margin:8px 0;color:var(--muted,#66736d)}
+
+
+/* Hai nút thanh toán nhanh Cash / QR Code thay cho nút Thanh toán cũ */
+#page.pos-page .quick-payment-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:10px;
+}
+#page.pos-page .quick-payment-btn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  min-height:52px;
+  border:1px solid #cfdad4;
+  border-radius:10px;
+  background:#fff;
+  color:#173d32;
+  font:800 15px/1.2 inherit;
+  cursor:pointer;
+  transition:background .15s,border-color .15s,transform .15s;
+}
+#page.pos-page .quick-payment-btn:hover{background:#edf6f1;border-color:#1b6a50}
+#page.pos-page .quick-payment-btn:active{transform:scale(.985)}
+#page.pos-page .quick-payment-btn.cash{border-color:#9bcbb7;background:#f2faf6}
+#page.pos-page .quick-payment-btn.qr{border-color:#b9cbd0;background:#f5f8fa}
+#page.pos-page .quick-payment-icon{font-size:21px;line-height:1}

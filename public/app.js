@@ -752,14 +752,12 @@ function renderPOS() {
                   <textarea id="orderNote" rows="2" maxlength="300" placeholder="Ví dụ: ít đá, không đường, đóng gói riêng..." oninput="state.orderNote=this.value"></textarea>
                 </label>
               </div>
-              <div class="payment-label">Phương thức thanh toán <span class="required-mark">*</span></div>
-              <div class="payment-options">
-                <button type="button" class="payment-option" id="payCash" onclick="selectPayment('cash')">💵 Tiền mặt</button>
-                <button type="button" class="payment-option" id="payTransfer" onclick="selectPayment('transfer')">▣ Chuyển khoản</button>
-              </div>
             </div>
             <div class="total-line big"><span>Tổng tiền</span><span id="cartTotal">0đ</span></div>
-            <button class="primary full payment-main" onclick="checkout()">Thanh toán</button>
+            <div class="quick-payment-actions">
+              <button type="button" class="quick-payment-btn cash" onclick="checkoutWithMethod('cash')"><span class="quick-payment-icon">💵</span><span>Cash</span></button>
+              <button type="button" class="quick-payment-btn qr" onclick="checkoutWithMethod('transfer')"><span class="quick-payment-icon">▦</span><span>QR Code</span></button>
+            </div>
           </div>
         </aside>
       </div>
@@ -1289,6 +1287,12 @@ function saveCartItem(i) {
 function selectPayment(method) {
   state.paymentMethod = method;
   syncPaymentUI();
+}
+
+// Hai nút thanh toán nhanh: Cash mở quy trình tiền mặt, QR Code mở quy trình payOS.
+function checkoutWithMethod(method) {
+  state.paymentMethod = method;
+  checkout();
 }
 
 function syncPaymentUI() {
