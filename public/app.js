@@ -1845,21 +1845,26 @@ async function loadStaffRevenue() {
             </section>
           </div>
         </section>
-        <div class="dashboard-staff-heading"><h3>Doanh thu theo nhân viên</h3><span>Bấm vào từng nhân viên để xem chi tiết đơn hàng</span></div>
-        <div class="staff-revenue-grid">
-          ${staff.map(u => `
-            <button class="staff-revenue-card" onclick="showStaffOrders(${u.id}, '${esc(u.fullName).replace(/'/g, "\\'")}')">
-              <div class="staff-revenue-top"><div class="staff-order-icon">♙</div><div class="staff-revenue-name"><strong>${esc(u.fullName)}</strong><span>${u.orders} đơn</span></div><span class="staff-order-arrow">›</span></div>
-              <div class="staff-revenue-total">${money(u.revenue)}</div>
-              <div class="staff-revenue-split"><span><small>💵 Tiền mặt</small><b>${money(u.cash)}</b></span><span><small>▣ Chuyển khoản</small><b>${money(u.transfer)}</b></span></div>
-            </button>`).join('') || '<div class="empty">Chưa có nhân viên phát sinh đơn trong khoảng thời gian này</div>'}
-        </div>
-      </div>
-      <button class="revenue-total-card" type="button" onclick="showAllOrders()">
-        <div><strong>TỔNG TẤT CẢ NHÂN VIÊN</strong><span>${total.orders} đơn · Bấm để xem toàn bộ đơn hàng</span></div>
-        <div class="revenue-total-money">${money(total.revenue)}</div>
-        <div class="revenue-total-split"><span>💵 ${money(total.cash)}</span><span>▣ ${money(total.transfer)}</span></div>
-      </button>`;
+        <details class="staff-revenue-section" open>
+          <summary class="staff-revenue-section-summary"><span><strong>Doanh thu theo nhân viên</strong><small>${staff.length} nhân viên · ${total.orders} đơn hàng</small></span><span class="staff-section-hint">Xem chi tiết <i>⌄</i></span></summary>
+          <div class="staff-revenue-section-body">
+            <div class="dashboard-staff-heading"><h3>Doanh thu theo nhân viên</h3><span>Bấm vào từng nhân viên để xem chi tiết đơn hàng</span></div>
+            <div class="staff-revenue-grid">
+              ${staff.map(u => `
+                <button class="staff-revenue-card" onclick="showStaffOrders(${u.id}, '${esc(u.fullName).replace(/'/g, "\\'")}')">
+                  <div class="staff-revenue-top"><div class="staff-order-icon">♙</div><div class="staff-revenue-name"><strong>${esc(u.fullName)}</strong><span>${u.orders} đơn</span></div><span class="staff-order-arrow">›</span></div>
+                  <div class="staff-revenue-total">${money(u.revenue)}</div>
+                  <div class="staff-revenue-split"><span><small>💵 Tiền mặt</small><b>${money(u.cash)}</b></span><span><small>▣ Chuyển khoản</small><b>${money(u.transfer)}</b></span></div>
+                </button>`).join('') || '<div class="empty">Chưa có nhân viên phát sinh đơn trong khoảng thời gian này</div>'}
+            </div>
+            <button class="revenue-total-card" type="button" onclick="showAllOrders()">
+              <div><strong>TỔNG TẤT CẢ NHÂN VIÊN</strong><span>${total.orders} đơn · Bấm để xem toàn bộ đơn hàng</span></div>
+              <div class="revenue-total-money">${money(total.revenue)}</div>
+              <div class="revenue-total-split"><span>💵 ${money(total.cash)}</span><span>▣ ${money(total.transfer)}</span></div>
+            </button>
+          </div>
+        </details>
+      </div>`;
   } catch (e) {
     $('#staffOrdersArea').innerHTML = `<div class="empty error-empty">${esc(e.message || 'Không tải được doanh thu')}</div>`;
   }

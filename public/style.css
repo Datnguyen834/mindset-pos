@@ -2341,3 +2341,28 @@ body.modal-open { overflow: hidden; }
 .dashboard-staff-heading span{font-size:11px;color:#829088}
 @media(max-width:1200px){.dashboard-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-insights-grid{grid-template-columns:1fr 1fr}.dashboard-trend-panel{grid-column:1/-1}}
 @media(max-width:700px){.dashboard-kpis{grid-template-columns:1fr 1fr;gap:8px}.dashboard-kpi{padding:13px}.dashboard-kpi>strong{font-size:18px}.dashboard-insights-grid{grid-template-columns:1fr}.dashboard-trend-panel,.dashboard-highlights{grid-column:auto}.dashboard-panel{padding:13px}.dashboard-staff-heading{align-items:flex-start;flex-direction:column}.revenue-bars{height:185px}}
+
+
+/* Revenue staff details grouped into one compact expandable section; three cards per row. */
+.staff-revenue-section{margin:0 0 14px;border:1px solid #dce7e1;border-radius:15px;background:#fff;box-shadow:var(--shadow);overflow:hidden;flex:0 0 auto}
+.staff-revenue-section-summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 17px;cursor:pointer;background:#f6faf8;color:#20372d}
+.staff-revenue-section-summary::-webkit-details-marker{display:none}
+.staff-revenue-section-summary>span:first-child{display:flex;flex-direction:column;gap:4px;min-width:0}
+.staff-revenue-section-summary strong{font-size:15px}
+.staff-revenue-section-summary small{font-size:11px;color:#78877f}
+.staff-section-hint{display:flex;align-items:center;gap:9px;color:#60776c;font-size:12px;white-space:nowrap}
+.staff-section-hint i{font-style:normal;font-size:18px;transition:transform .18s}
+.staff-revenue-section:not([open]) .staff-section-hint i{transform:rotate(-90deg)}
+.staff-revenue-section-body{padding:13px 14px 14px}
+.staff-revenue-section-body .dashboard-staff-heading{margin-top:0}
+.staff-revenue-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.staff-revenue-card{min-width:0;padding:14px;border-radius:14px}
+.staff-revenue-name strong{font-size:15px;overflow-wrap:anywhere}
+.staff-revenue-total{font-size:21px;margin:12px 0 10px;overflow-wrap:anywhere}
+.staff-revenue-split{gap:7px}
+.staff-revenue-split span{padding:8px;min-width:0}
+.staff-revenue-split b{font-size:13px;overflow-wrap:anywhere}
+.staff-revenue-section .revenue-total-card{margin-top:12px;padding:13px 15px;grid-template-columns:minmax(0,1fr) auto;gap:8px 14px}
+.staff-revenue-section .revenue-total-split{grid-column:1/-1;justify-content:flex-start;font-size:12px}
+@media(max-width:1150px){.staff-revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.staff-revenue-grid{grid-template-columns:1fr}.staff-revenue-section-body{padding:10px}.staff-revenue-section-summary{padding:12px}.staff-revenue-section .revenue-total-card{grid-template-columns:1fr}.staff-revenue-section .revenue-total-split{grid-column:auto}}
