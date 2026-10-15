@@ -1786,6 +1786,7 @@ function revenueRange() {
 }
 
 async function loadStaffRevenue() {
+  $('#staffOrdersArea')?.classList.remove('all-orders-view');
   try {
     const range = revenueRange();
     $('#staffOrdersArea').innerHTML = '<div class="empty">Đang tải dashboard doanh thu...</div>';
@@ -1903,6 +1904,7 @@ async function loadStaffOrderDetail(staffId, staffName) {
 
 async function showAllOrders() {
   const range = revenueRange();
+  $('#staffOrdersArea').classList.add('all-orders-view');
   $('#staffOrdersArea').innerHTML = `<div class="page-title compact-title detail-title"><div><h2 style="margin:0">Tất cả đơn hàng</h2><p>Lọc toàn bộ đơn của tất cả nhân viên.</p></div><button class="btn" onclick="loadStaffRevenue()">← Doanh thu</button></div>
     <div class="order-filter-panel"><label>Ngày từ<input id="staffFrom" type="date" value="${range.from}"></label><label>Đến ngày<input id="staffTo" type="date" value="${range.to}"></label><label>Nhân viên<select id="allStaffFilter"><option value="">Tất cả</option></select></label><label>Thanh toán<select id="staffPayment"><option value="">Tất cả</option><option value="cash">Tiền mặt</option><option value="transfer">Chuyển khoản</option></select></label><label class="product-filter">Sản phẩm<input id="staffProduct" placeholder="Tên sản phẩm"></label><button class="btn primary" onclick="loadAllOrders()">Tìm đơn hàng</button></div>
     <div class="panel order-detail-panel"><div id="staffOrderSummary" class="order-detail-summary"></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Mã</th><th>Thời gian</th><th>Nhân viên</th><th>Sản phẩm</th><th>Thanh toán</th><th>Tổng</th><th></th></tr></thead><tbody id="ordersBody"><tr><td colspan="7">Đang tải...</td></tr></tbody></table></div></div>`;
