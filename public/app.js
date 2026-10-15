@@ -1788,13 +1788,64 @@ function revenueRange() {
 async function loadStaffRevenue() {
   try {
     const range = revenueRange();
-    $('#staffOrdersArea').innerHTML = '<div class="empty">Đang tải doanh thu...</div>';
-    const d = await api(`/api/admin/orders/staff?from=${range.from}&to=${range.to}`);
+    $('#staffOrdersArea').innerHTML = '<div class="empty">Đang tải dashboard doanh thu...</div>';
+    const qs = `from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`;
+    const [d, dashboard] = await Promise.all([
+      api(`/api/admin/orders/staff?${qs}`),
+      api(`/api/admin/orders/dashboard?${qs}`)
+    ]);
     const staff = d.staff || [];
     const total = d.total || {orders:0,revenue:0,cash:0,transfer:0};
+    const dash = dashboard || {};
+    const stats = dash.total || {};
+    const days = dash.byDay || [];
+    const products = dash.topProducts || [];
+    const orderTypes = dash.orderTypes || [];
+    const maxRevenue = Math.max(1, ...days.map(x => Number(x.revenue || 0)));
+    const maxProductQty = Math.max(1, ...products.map(x => Number(x.quantity || 0)));
+    const cashPct = total.revenue ? Math.round(Number(total.cash || 0) / Number(total.revenue) * 100) : 0;
+    const transferPct = total.revenue ? 100 - cashPct : 0;
+    const bestStaff = [...staff].sort((a,b) => Number(b.revenue || 0) - Number(a.revenue || 0))[0];
+    const topProduct = products[0];
+    const dineIn = orderTypes.filter(x => ['dine_in','dine-in','onsite','in_store'].includes(String(x.type || '').toLowerCase())).reduce((n,x)=>n+Number(x.orders||0),0);
+    const takeaway = orderTypes.filter(x => ['takeaway','take_away','to_go'].includes(String(x.type || '').toLowerCase())).reduce((n,x)=>n+Number(x.orders||0),0);
     $('#staffOrdersArea').innerHTML = `
       <div class="revenue-heading"><h2>${range.label}</h2><span>${total.orders} đơn hàng</span></div>
       <div class="staff-revenue-scroll">
+        <section class="revenue-dashboard" aria-label="Tổng quan doanh thu">
+          <div class="dashboard-kpis">
+            <article class="dashboard-kpi kpi-main"><span><i>↗</i> Tổng doanh thu</span><strong>${money(total.revenue)}</strong><small>Toàn bộ đơn đã thanh toán</small></article>
+            <article class="dashboard-kpi"><span><i>▣</i> Tổng đơn hàng</span><strong>${Number(total.orders || 0).toLocaleString('vi-VN')}</strong><small>Đơn thanh toán thành công</small></article>
+            <article class="dashboard-kpi"><span><i>◉</i> Giá trị trung bình/đơn</span><strong>${money(stats.average_order || 0)}</strong><small>Doanh thu chia số đơn</small></article>
+            <article class="dashboard-kpi"><span><i>♙</i> Nhân viên có đơn</span><strong>${Number(stats.active_staff || 0).toLocaleString('vi-VN')}</strong><small>Trong khoảng thời gian đã chọn</small></article>
+          </div>
+          <div class="dashboard-insights-grid">
+            <section class="dashboard-panel dashboard-trend-panel">
+              <div class="dashboard-panel-title"><div><h3>Biến động doanh thu</h3><p>Doanh thu theo từng ngày trong kỳ</p></div><span class="dashboard-mini-tag">${days.length} ngày</span></div>
+              <div class="revenue-bars">${days.map(x => `<div class="revenue-bar-item" title="${esc(x.label)}: ${money(x.revenue)}"><div class="revenue-bar-value">${Number(x.revenue) ? money(x.revenue) : '—'}</div><div class="revenue-bar-track"><div class="revenue-bar-fill" style="height:${Math.max(Number(x.revenue)>0?4:0, Math.round(Number(x.revenue||0)/maxRevenue*100))}%"></div></div><span>${esc(x.label)}</span></div>`).join('') || '<div class="empty">Chưa có dữ liệu doanh thu</div>'}</div>
+            </section>
+            <section class="dashboard-panel">
+              <div class="dashboard-panel-title"><div><h3>Cơ cấu thanh toán</h3><p>Tỷ trọng theo doanh thu</p></div></div>
+              <div class="payment-total-line"><span>Tiền mặt</span><strong>${money(total.cash)}</strong><b>${cashPct}%</b></div>
+              <div class="payment-track"><span class="payment-cash-fill" style="width:${cashPct}%"></span></div>
+              <div class="payment-total-line"><span>Chuyển khoản / QR</span><strong>${money(total.transfer)}</strong><b>${transferPct}%</b></div>
+              <div class="payment-track"><span class="payment-transfer-fill" style="width:${transferPct}%"></span></div>
+              <div class="dashboard-payment-footer"><span>💵 Tiền mặt <b>${cashPct}%</b></span><span>▦ QR / chuyển khoản <b>${transferPct}%</b></span></div>
+            </section>
+            <section class="dashboard-panel">
+              <div class="dashboard-panel-title"><div><h3>Món bán chạy</h3><p>Top 5 theo số lượng</p></div></div>
+              <div class="top-products-list">${products.map((x,i)=>`<div class="top-product-row"><span class="top-product-rank">${i+1}</span><div class="top-product-info"><strong>${esc(x.name)}</strong><div class="product-quantity-track"><span style="width:${Math.max(5,Math.round(Number(x.quantity||0)/maxProductQty*100))}%"></span></div></div><div class="top-product-count"><b>${Number(x.quantity||0)}</b><small>${money(x.revenue)}</small></div></div>`).join('') || '<div class="empty">Chưa có món bán ra trong kỳ</div>'}</div>
+            </section>
+            <section class="dashboard-panel dashboard-highlights">
+              <div class="dashboard-panel-title"><div><h3>Điểm nổi bật</h3><p>Tóm tắt nhanh trong kỳ</p></div></div>
+              <div class="highlight-row"><span class="highlight-icon">🏆</span><div><small>Nhân viên doanh thu cao nhất</small><strong>${bestStaff && Number(bestStaff.revenue)>0 ? esc(bestStaff.fullName) : 'Chưa có dữ liệu'}</strong></div><b>${bestStaff && Number(bestStaff.revenue)>0 ? money(bestStaff.revenue) : '—'}</b></div>
+              <div class="highlight-row"><span class="highlight-icon">☕</span><div><small>Món được gọi nhiều nhất</small><strong>${topProduct ? esc(topProduct.name) : 'Chưa có dữ liệu'}</strong></div><b>${topProduct ? `${Number(topProduct.quantity||0)} món` : '—'}</b></div>
+              <div class="highlight-row"><span class="highlight-icon">🧾</span><div><small>Giá trị trung bình mỗi đơn</small><strong>Chi tiêu trung bình</strong></div><b>${money(stats.average_order || 0)}</b></div>
+              <div class="highlight-footnote">${dineIn || takeaway ? `Dùng tại chỗ: ${dineIn} đơn · Mang về: ${takeaway} đơn` : 'Dùng bộ lọc ngày/tháng phía trên để xem lại từng kỳ.'}</div>
+            </section>
+          </div>
+        </section>
+        <div class="dashboard-staff-heading"><h3>Doanh thu theo nhân viên</h3><span>Bấm vào từng nhân viên để xem chi tiết đơn hàng</span></div>
         <div class="staff-revenue-grid">
           ${staff.map(u => `
             <button class="staff-revenue-card" onclick="showStaffOrders(${u.id}, '${esc(u.fullName).replace(/'/g, "\\'")}')">

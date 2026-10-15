@@ -2287,3 +2287,57 @@ body.modal-open { overflow: hidden; }
   margin-top: 6px !important;
   padding-top: 7px !important;
 }
+
+/* ===== Revenue overview dashboard ===== */
+.revenue-dashboard{display:flex;flex-direction:column;gap:16px;margin-bottom:22px}
+.dashboard-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.dashboard-kpi{min-width:0;background:#fff;border:1px solid var(--line);border-radius:15px;padding:17px 18px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.dashboard-kpi>span{display:flex;align-items:center;gap:7px;color:#627069;font-size:12px;font-weight:800}
+.dashboard-kpi>span i{font-style:normal;display:inline-flex;align-items:center;justify-content:center;width:25px;height:25px;border-radius:8px;background:#eef5f1;color:#174638;font-size:15px}
+.dashboard-kpi>strong{font-size:clamp(19px,1.6vw,27px);line-height:1.15;color:#173f33;overflow-wrap:anywhere}
+.dashboard-kpi>small{font-size:11px;color:#849089;line-height:1.4}
+.dashboard-kpi.kpi-main{background:linear-gradient(135deg,#123c30,#1c5947);border-color:#194b3c}
+.dashboard-kpi.kpi-main>span,.dashboard-kpi.kpi-main>small{color:#d0e3da}
+.dashboard-kpi.kpi-main>span i{background:rgba(255,255,255,.14);color:#fff}
+.dashboard-kpi.kpi-main>strong{color:#fff}
+.dashboard-insights-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:14px;align-items:stretch}
+.dashboard-panel{min-width:0;background:#fff;border:1px solid var(--line);border-radius:15px;padding:17px;box-shadow:var(--shadow);overflow:hidden}
+.dashboard-panel-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:16px}
+.dashboard-panel-title h3{font-size:15px;margin:0;color:#1d3028}
+.dashboard-panel-title p{font-size:11px;color:#89938e;margin:4px 0 0}
+.dashboard-mini-tag{white-space:nowrap;border-radius:20px;padding:5px 8px;background:#eef5f1;color:#245544;font-size:11px;font-weight:800}
+.revenue-bars{height:205px;display:flex;align-items:stretch;gap:clamp(3px,.55vw,8px);padding-top:12px;overflow-x:auto;overflow-y:hidden}
+.revenue-bar-item{flex:1 0 22px;min-width:22px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px}
+.revenue-bar-value{width:100%;font-size:9px;color:#74817a;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.revenue-bar-track{height:145px;width:min(100%,30px);display:flex;align-items:flex-end;justify-content:center;border-radius:6px 6px 3px 3px;background:#f2f6f4;overflow:hidden}
+.revenue-bar-fill{width:100%;min-height:0;background:linear-gradient(180deg,#3c8b6e,#174b3b);border-radius:5px 5px 2px 2px;transition:height .2s}
+.revenue-bar-item>span{font-size:10px;color:#7a8780;white-space:nowrap}
+.payment-total-line{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;margin:15px 0 8px;font-size:12px;color:#66736c}
+.payment-total-line strong{color:#25372f;font-size:12px;white-space:nowrap}
+.payment-total-line b{color:#245743;min-width:36px;text-align:right}
+.payment-track{height:9px;background:#eef2ef;border-radius:20px;overflow:hidden}
+.payment-track>span{display:block;height:100%;border-radius:20px}
+.payment-cash-fill{background:#2f8061}.payment-transfer-fill{background:#87bba5}
+.dashboard-payment-footer{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:20px;font-size:10px;color:#77847d}
+.dashboard-payment-footer b{color:#244c3d}
+.top-products-list{display:flex;flex-direction:column;gap:13px}
+.top-product-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:center;gap:9px}
+.top-product-rank{display:flex;align-items:center;justify-content:center;width:25px;height:25px;border-radius:8px;background:#edf5f0;color:#245943;font-size:11px;font-weight:900}
+.top-product-info{min-width:0;display:flex;flex-direction:column;gap:7px}
+.top-product-info>strong{font-size:12px;color:#2b3b33;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.product-quantity-track{height:5px;background:#f0f3f1;border-radius:8px;overflow:hidden}
+.product-quantity-track span{display:block;height:100%;background:#43876b;border-radius:8px}
+.top-product-count{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.top-product-count b{font-size:12px;color:#244c3d}.top-product-count small{font-size:10px;color:#849088;white-space:nowrap}
+.dashboard-highlights{grid-column:1/-1}
+.highlight-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #edf1ee}
+.highlight-icon{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#f1f6f3;font-size:15px}
+.highlight-row>div{min-width:0;display:flex;flex-direction:column;gap:4px}
+.highlight-row small{font-size:10px;color:#849088}.highlight-row strong{font-size:12px;color:#27382f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.highlight-row>b{font-size:12px;color:#1e5943;white-space:nowrap}
+.highlight-footnote{font-size:11px;color:#718078;padding-top:12px}
+.dashboard-staff-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 12px}
+.dashboard-staff-heading h3{font-size:17px;margin:0;color:#1e3028}
+.dashboard-staff-heading span{font-size:11px;color:#829088}
+@media(max-width:1200px){.dashboard-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-insights-grid{grid-template-columns:1fr 1fr}.dashboard-trend-panel{grid-column:1/-1}}
+@media(max-width:700px){.dashboard-kpis{grid-template-columns:1fr 1fr;gap:8px}.dashboard-kpi{padding:13px}.dashboard-kpi>strong{font-size:18px}.dashboard-insights-grid{grid-template-columns:1fr}.dashboard-trend-panel,.dashboard-highlights{grid-column:auto}.dashboard-panel{padding:13px}.dashboard-staff-heading{align-items:flex-start;flex-direction:column}.revenue-bars{height:185px}}

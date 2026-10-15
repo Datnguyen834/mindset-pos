@@ -653,6 +653,39 @@ app.get('/api/admin/orders/staff',auth,adminOnly,async(req,res)=>{
   res.json({staff:r.rows,total:total.rows[0]});
 });
 
+app.get('/api/admin/orders/dashboard',auth,adminOnly,async(req,res)=>{
+  try {
+    const {from,to}=req.query;
+    const {start,end}=reportBounds(from,to);
+    const totals=await q(`SELECT COUNT(*)::int AS orders,
+        COALESCE(SUM(total),0)::int AS revenue,
+        COALESCE(SUM(CASE WHEN payment_method='cash' THEN total ELSE 0 END),0)::int AS cash,
+        COALESCE(SUM(CASE WHEN payment_method='transfer' THEN total ELSE 0 END),0)::int AS transfer,
+        COALESCE(AVG(total),0)::int AS average_order,
+        COUNT(DISTINCT user_id)::int AS active_staff
+      FROM orders WHERE status='paid' AND created_at BETWEEN $1 AND $2`,[start,end]);
+    const byDay=await q(`SELECT TO_CHAR(day_value,'DD/MM') AS label, TO_CHAR(day_value,'YYYY-MM-DD') AS day,
+        COALESCE(x.orders,0)::int AS orders, COALESCE(x.revenue,0)::int AS revenue
+      FROM generate_series($1::date,$2::date,interval '1 day') AS day_value
+      LEFT JOIN (SELECT (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS local_day,
+          COUNT(*)::int AS orders, COALESCE(SUM(total),0)::int AS revenue
+        FROM orders WHERE status='paid' AND created_at BETWEEN $3 AND $4
+        GROUP BY (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date) x
+      ON x.local_day=day_value::date ORDER BY day_value`,[from || localDateString(),to || localDateString(),start,end]);
+    const topProducts=await q(`SELECT oi.item_name AS name, SUM(oi.quantity)::int AS quantity,
+        COALESCE(SUM(oi.line_total),0)::int AS revenue
+      FROM order_items oi JOIN orders o ON o.id=oi.order_id
+      WHERE o.status='paid' AND o.created_at BETWEEN $1 AND $2
+      GROUP BY oi.item_name ORDER BY quantity DESC,revenue DESC LIMIT 5`,[start,end]);
+    const orderTypes=await q(`SELECT COALESCE(order_type,'unknown') AS type, COUNT(*)::int AS orders
+      FROM orders WHERE status='paid' AND created_at BETWEEN $1 AND $2 GROUP BY order_type`,[start,end]);
+    res.json({total:totals.rows[0],byDay:byDay.rows,topProducts:topProducts.rows,orderTypes:orderTypes.rows});
+  } catch(e) {
+    console.error('Revenue dashboard error:',e?.message || e);
+    res.status(500).json({message:'Không tải được dashboard doanh thu'});
+  }
+});
+
 app.get('/api/admin/orders/staff/:id',auth,adminOnly,async(req,res)=>{
   const {from,to,payment='',product=''}=req.query;
   const {start,end}=reportBounds(from,to);
