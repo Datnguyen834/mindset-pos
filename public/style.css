@@ -2366,3 +2366,15 @@ body.modal-open { overflow: hidden; }
 .staff-revenue-section .revenue-total-split{grid-column:1/-1;justify-content:flex-start;font-size:12px}
 @media(max-width:1150px){.staff-revenue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.staff-revenue-grid{grid-template-columns:1fr}.staff-revenue-section-body{padding:10px}.staff-revenue-section-summary{padding:12px}.staff-revenue-section .revenue-total-card{grid-template-columns:1fr}.staff-revenue-section .revenue-total-split{grid-column:auto}}
+
+/* Revenue page: compact header and date filter */
+#page.revenue-page.content{padding-top:12px}
+.revenue-page .page-title{margin-bottom:8px}
+.revenue-page .page-title h1{line-height:1.15}
+.revenue-page .revenue-filter-bar{gap:8px;margin-bottom:10px}
+.revenue-page .revenue-mode-tabs .report-tab{padding:9px 16px;min-height:42px}
+.revenue-page .revenue-selector{padding:10px 12px;gap:10px;border-radius:12px}
+.revenue-page .revenue-selector label{gap:4px;font-size:13px}
+.revenue-page .revenue-selector input{min-width:180px;padding:8px 10px;min-height:38px}
+.revenue-page .revenue-selector .btn{padding:9px 13px;min-height:38px}
+@media(max-width:900px){#page.revenue-page.content{padding-top:10px}}

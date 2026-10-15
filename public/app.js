@@ -1742,7 +1742,7 @@ async function completePayment(method, cashMeta = null) {
 async function renderOrders() {
   $('#page').innerHTML = `<div class="content revenue-page">
     <div class="page-title">
-      <div><h1>Doanh thu</h1><p>Xem doanh thu theo ngày hoặc tháng, theo từng nhân viên và toàn bộ cửa hàng.</p></div>
+      <div><h1>Doanh thu</h1></div>
     </div>
     <div class="revenue-filter-bar">
       <div class="revenue-mode-tabs">
