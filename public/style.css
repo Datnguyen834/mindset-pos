@@ -2254,30 +2254,36 @@ body.modal-open { overflow: hidden; }
   justify-content:center;
   gap:9px;
   min-height:52px;
-HEAD
-  border:1px solid #cfdad4;
-  border-radius:10px;
-  background:#fff;
-  color:#173d32;
-
   border:1px solid #173d32;
   border-radius:10px;
   background:#173d32;
   color:#fff;
- 130bbcb (new code s)
   font:800 15px/1.2 inherit;
   cursor:pointer;
   transition:background .15s,border-color .15s,transform .15s;
 }
-<<<<<<< HEAD
-#page.pos-page .quick-payment-btn:hover{background:#edf6f1;border-color:#1b6a50}
-#page.pos-page .quick-payment-btn:active{transform:scale(.985)}
-#page.pos-page .quick-payment-btn.cash{border-color:#9bcbb7;background:#f2faf6}
-#page.pos-page .quick-payment-btn.qr{border-color:#b9cbd0;background:#f5f8fa}
-=======
 #page.pos-page .quick-payment-btn:hover{background:#205344;border-color:#205344}
 #page.pos-page .quick-payment-btn:active{transform:scale(.985)}
 #page.pos-page .quick-payment-btn.cash,
 #page.pos-page .quick-payment-btn.qr{border-color:#173d32;background:#173d32;color:#fff}
->>>>>>> 130bbcb (new code s)
 #page.pos-page .quick-payment-icon{font-size:21px;line-height:1}
+
+
+/* POS layout: remove the redundant Menu heading and reclaim the vertical space. */
+@media (min-width: 901px) {
+  #page.pos-page .pos-content {
+    padding-top: 10px !important;
+  }
+}
+
+
+/* POS checkout polish: remove the extra divider below the order note and balance spacing */
+#page.pos-page .order-service-box {
+  border-bottom: 0 !important;
+  padding-bottom: 10px !important;
+  margin-bottom: 9px !important;
+}
+#page.pos-page .cart-total {
+  margin-top: 6px !important;
+  padding-top: 7px !important;
+}

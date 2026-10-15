@@ -710,9 +710,6 @@ function renderPOS() {
   const cats = ['Tất cả', ...new Set(state.menu.map(x => x.category))];
   $('#page').innerHTML = `
     <div class="content pos-content">
-      <div class="page-title compact-title">
-        <div><h1>Menu</h1></div>
-      </div>
       <div class="pos-layout">
         <section class="menu-panel">
           <div class="categories">
